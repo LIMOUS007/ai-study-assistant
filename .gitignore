@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment variables (contains API keys — never commit)
+.env
+
+# Uploaded course files (user data, not source code)
+data/
+
+# Vector stores (auto-generated from uploads, can be rebuilt)
+vectorstore/
+
+# SQLite database (user data, regenerated on first run)
+db/
+
+# Old chroma_db at root level
+chroma_db/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Claude Code
+.claude/settings.local.json
