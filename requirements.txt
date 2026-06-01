@@ -6,3 +6,6 @@ langchain-community
 python-dotenv
 pydantic
 openai
+chromadb
+pypdf
+python-pptx

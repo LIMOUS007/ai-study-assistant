@@ -34,6 +34,19 @@ def init_db():
                 FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS documents (
+                id                TEXT PRIMARY KEY,
+                course_id         TEXT NOT NULL,
+                filename          TEXT NOT NULL,
+                file_type         TEXT NOT NULL,
+                document_category TEXT NOT NULL,
+                source_url        TEXT,
+                upload_date       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                chunk_count       INTEGER DEFAULT 0,
+                FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+            )
+        """)
         conn.commit()
 
 
@@ -88,6 +101,59 @@ def delete_course(course_id: str):
     with get_connection() as conn:
         conn.execute("DELETE FROM courses WHERE id = ?", (course_id,))
         conn.commit()
+
+
+# --- Documents ---
+
+def add_document(course_id: str, filename: str, file_type: str, document_category: str) -> dict:
+    doc_id = str(uuid.uuid4())
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO documents (id, course_id, filename, file_type, document_category) VALUES (?, ?, ?, ?, ?)",
+            (doc_id, course_id, filename, file_type, document_category)
+        )
+        conn.commit()
+    return get_document(doc_id)
+
+
+def get_document(document_id: str) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM documents WHERE id = ?", (document_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_documents(course_id: str) -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM documents WHERE course_id = ? ORDER BY upload_date ASC",
+            (course_id,)
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def update_chunk_count(document_id: str, count: int):
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE documents SET chunk_count = ? WHERE id = ?",
+            (count, document_id)
+        )
+        conn.commit()
+
+
+def delete_document(document_id: str):
+    with get_connection() as conn:
+        conn.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+        conn.commit()
+
+
+def course_has_documents(course_id: str) -> bool:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM documents WHERE course_id = ?", (course_id,)
+        ).fetchone()
+    return row[0] > 0
 
 
 # --- Chat Messages ---
