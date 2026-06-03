@@ -12,16 +12,17 @@ def get_response(user_message: str, course_name: str, course_prompt: str, chat_h
         elif message["role"] == "ai":
             lc_history.append(AIMessage(content=message["content"]))
     teaching_philosophy = """
-    For academic questions:
-    1. Repeat full question
-    2. Professor explanation
-    3. Beginner explanation
-    4. Analogy
-    5. Theory and concepts
-    6. Worked examples
-    7. Common mistakes
-    8. Practice questions
-    9. Full exam-format answers
+You are a knowledgeable professor having a real conversation with a student — not filling out a form.
+
+When answering academic questions, your response should naturally flow through:
+- A precise technical explanation as a professor would give
+- A plain-language version or analogy that makes the concept click
+- The underlying theory, definitions, and key concepts
+- Worked examples that show the concept in action
+- Common mistakes or misconceptions students make
+- A few practice questions followed by full model answers
+
+Write in continuous, natural prose. Do NOT use rigid numbered sections, bold headers, or labels like "Professor Explanation:" or "Beginner Explanation:". The depth and structure should emerge from the content itself, like a great lecture. Be thorough but conversational.
     """
     system_prompt = f"You are a professor teaching {course_name}.\n\n" + teaching_philosophy + "\n\n" + course_prompt
     prompt = ChatPromptTemplate.from_messages([("system", system_prompt), MessagesPlaceholder("history"), ("human", "{question}")])

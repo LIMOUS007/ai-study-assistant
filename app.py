@@ -3,7 +3,6 @@ from dotenv import load_dotenv
 from core import database as db
 from ui.sidebar import render_sidebar
 from ui.chat_view import render_chat
-from ui.upload_view import render_upload_view
 load_dotenv()
 db.init_db()
 
@@ -22,7 +21,6 @@ if st.session_state.selected_course_id:
     course = db.get_course(st.session_state.selected_course_id)
     if course:
         render_chat(course)
-        render_upload_view(course)
     else:
         # Course was deleted externally
         st.session_state.selected_course_id = None

@@ -217,7 +217,7 @@ Encoded as a system prompt + `AcademicResponse` Pydantic model.
 
 **DB changes:** `documents` table added.
 
-**UI:** Upload button/expander at bottom of chat. Document list in sidebar per course.
+**UI:** 📎 popover button in the chat header (top-right). Upload form + document list live inside the popover. Toast notification on successful upload. Chat flow is uninterrupted — the upload UI never sits between messages and the input box.
 
 **Acceptance criteria:**
 - [ ] Upload PDF → ask question → answer cites filename + page
@@ -446,6 +446,17 @@ This is different from chat. No LLM involved — pure vector similarity search. 
 2. DB schema changes
 3. UI integration
 4. Manual test: `streamlit run app.py` → verify acceptance criteria
+
+---
+
+## UI Principles
+
+1. Chat is the primary feature — it must occupy ~80% of visible space.
+2. Chat input stays fixed at the bottom; nothing should push it downward.
+3. File upload never sits in the middle of the conversation flow.
+4. Knowledge base management lives in a popover or collapsible — closed by default.
+5. Success notifications use `st.toast()` (compact, auto-hides) not `st.success()` banners.
+6. Course management and file management are secondary — sidebar or popover only.
 
 ---
 
