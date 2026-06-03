@@ -1,21 +1,10 @@
-# ============================================================
-# YOUR LANGCHAIN CHAIN GOES HERE
-# ============================================================
-# This stub keeps the app running while you build the chain.
-#
-# chat_history is a list of dicts from SQLite:
-#   [{"role": "human", "content": "..."}, {"role": "ai", "content": "..."}, ...]
-#
-# Replace get_response() with your LangChain implementation.
-# ============================================================
-
-
 import httpx
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-
-def get_response(user_message: str, course_name: str, course_prompt: str, chat_history: list) -> str:
+from core import database as db
+from core.retrieval import build_rag_chain    
+def get_response(user_message: str, course_name: str, course_prompt: str, chat_history: list, course_id : str) -> str:
     lc_history = []
     for message in chat_history:
         if message["role"] == "human":
@@ -37,6 +26,10 @@ def get_response(user_message: str, course_name: str, course_prompt: str, chat_h
     system_prompt = f"You are a professor teaching {course_name}.\n\n" + teaching_philosophy + "\n\n" + course_prompt
     prompt = ChatPromptTemplate.from_messages([("system", system_prompt), MessagesPlaceholder("history"), ("human", "{question}")])
     model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
-    chain = prompt | model
-    response = chain.invoke({"history": lc_history, "question": user_message})
-    return response.content
+    if db.course_has_documents(course_id):
+        chain = build_rag_chain(course_id, system_prompt)
+        response = chain.invoke({"history": lc_history, "question": user_message})
+    else:
+        chain = prompt | model
+        response = chain.invoke({"history": lc_history, "question": user_message}).content
+    return response

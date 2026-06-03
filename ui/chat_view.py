@@ -38,6 +38,7 @@ def render_chat(course: dict):
                     course_name=course["name"],
                     course_prompt=course.get("course_prompt") or "",
                     chat_history=history,
+                    course_id=course["id"], 
                 )
             st.markdown(response)
 
