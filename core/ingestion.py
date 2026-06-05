@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, Docx2txtLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -34,6 +35,26 @@ def ingest_file(file_path, course_id, filename, file_type, document_category, do
     vector_store = Chroma(embedding_function=embeddings, persist_directory=str(vectorstore_path))
     vector_store.add_documents(chunks)
     return len(chunks)
+
+
+def delete_vectorstore(course_id: str):
+    """Delete the entire per-course ChromaDB vector store.
+    Explicitly releases all file handles first to avoid Windows file-lock errors.
+    """
+    import gc
+    import chromadb
+    vectorstore_path = Path("vectorstore") / course_id
+    if not vectorstore_path.exists():
+        return
+    try:
+        client = chromadb.PersistentClient(path=str(vectorstore_path))
+        for col in client.list_collections():
+            client.delete_collection(col.name)
+        del client
+        gc.collect()
+    except Exception:
+        pass
+    shutil.rmtree(vectorstore_path, ignore_errors=True)
 
 
 def delete_document_chunks(course_id: str, document_id: str):

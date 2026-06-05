@@ -1,16 +1,10 @@
 import streamlit as st
 from core import database as db
 from core.chat import get_response
-from ui.upload_view import render_upload_popover
 
 
 def render_chat(course: dict):
-    title_col, btn_col = st.columns([9, 1])
-    with title_col:
-        st.title(course["name"])
-    with btn_col:
-        st.write("")
-        render_upload_popover(course)
+    st.title(course["name"])
     if course.get("course_prompt"):
         st.caption(f"📌 {course['course_prompt']}")
 

@@ -1,8 +1,7 @@
-import shutil
 import streamlit as st
 from pathlib import Path
 from core import database as db
-from core.ingestion import ingest_file, delete_document_chunks
+from core.ingestion import ingest_file, delete_document_chunks, delete_vectorstore
 
 
 def render_upload_popover(course: dict):
@@ -16,7 +15,7 @@ def render_upload_popover(course: dict):
     if "uploader_key" not in st.session_state:
         st.session_state.uploader_key = 0
 
-    with st.popover("📎"):
+    with st.popover("📎 Upload Material", use_container_width=True):
         st.markdown("**Upload Material**")
 
         uploaded_file = st.file_uploader(
@@ -75,9 +74,7 @@ def render_upload_popover(course: dict):
             if c1.button("Yes, clear", key="yes_clear_kb", use_container_width=True):
                 for doc in db.get_documents(course_id):
                     db.delete_document(doc["id"])
-                vectorstore_path = Path("vectorstore") / course_id
-                if vectorstore_path.exists():
-                    shutil.rmtree(vectorstore_path)
+                delete_vectorstore(course_id)
                 st.session_state.pop("confirm_clear_kb", None)
                 st.session_state["upload_toast"] = "✓ Knowledge base cleared"
                 st.rerun()

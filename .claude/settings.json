@@ -1,9 +1,5 @@
 {
   "permissions": {
-    "deny": [
-      "Read(C:\\coding\\MACHINE\\LANGCHAIN\\*)",
-      "Read(C:\\coding\\MACHINE\\LANGCHAIN\\claude_code\\*)"
-    ],
     "allow": [
       "Read(C:\\coding\\MACHINE\\LANGCHAIN\\claude_code\\ai_study_assistant\\**)"
     ]

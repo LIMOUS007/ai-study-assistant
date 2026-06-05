@@ -1,5 +1,9 @@
+import shutil
 import streamlit as st
+from pathlib import Path
 from core import database as db
+from core.ingestion import delete_vectorstore
+from ui.upload_view import render_upload_popover
 
 
 def render_sidebar():
@@ -63,6 +67,10 @@ def render_sidebar():
                 st.warning(f"Delete **{course['name']}**? All chat history will be lost.")
                 c1, c2 = st.columns(2)
                 if c1.button("Yes", key=f"yes_del_{course['id']}", use_container_width=True):
+                    delete_vectorstore(course["id"])
+                    uploads = Path("data") / "courses" / course["id"]
+                    if uploads.exists():
+                        shutil.rmtree(uploads)
                     db.delete_course(course["id"])
                     st.session_state.selected_course_id = None
                     st.session_state.confirm_delete_id = None
@@ -90,3 +98,7 @@ def render_sidebar():
                     db.update_course_prompt(course["id"], new_prompt.strip())
                     st.session_state.editing_course_id = None
                     st.rerun()
+
+            # Upload panel
+            render_upload_popover(course)
+            st.divider()
