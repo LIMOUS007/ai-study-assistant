@@ -1,7 +1,32 @@
 import streamlit as st
 from pathlib import Path
 from core import database as db
-from core.ingestion import ingest_file, delete_document_chunks, delete_vectorstore
+from core.ingestion import ingest_file, ingest_youtube, delete_document_chunks, delete_vectorstore
+from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
+
+
+def _handle_youtube(course_id: str, url: str):
+    existing_urls = {d["source_url"] for d in db.get_documents(course_id) if d["source_url"]}
+    if url in existing_urls:
+        st.warning("This video is already indexed.")
+        return
+
+    doc = db.add_document(course_id, "Loading...", "youtube", "youtube", source_url=url)
+    try:
+        with st.spinner("Fetching transcript and indexing..."):
+            title, chunk_count = ingest_youtube(url, course_id, doc["id"])
+        db.update_chunk_count(doc["id"], chunk_count)
+        # patch filename to the real video title now that we have it
+        with db.get_connection() as conn:
+            conn.execute("UPDATE documents SET filename = ? WHERE id = ?", (title, doc["id"]))
+            conn.commit()
+        st.session_state["upload_toast"] = f"✓ {chunk_count} chunks indexed — {title}"
+    except (TranscriptsDisabled, NoTranscriptFound):
+        db.delete_document(doc["id"])
+        st.error("No transcript available for this video. Try a different lecture or check if captions are enabled.")
+    except Exception as e:
+        db.delete_document(doc["id"])
+        st.error(f"Failed to index video: {e}")
 
 
 def render_upload_popover(course: dict):
@@ -10,45 +35,51 @@ def render_upload_popover(course: dict):
     if "upload_toast" in st.session_state:
         st.toast(st.session_state.pop("upload_toast"), icon="✅")
 
-    # Dynamic key resets the uploader widget after each successful upload,
-    # preventing Streamlit from re-triggering the upload on the next rerun.
     if "uploader_key" not in st.session_state:
         st.session_state.uploader_key = 0
 
-    with st.popover("📎 Upload Material", use_container_width=True):
-        st.markdown("**Upload Material**")
+    with st.expander("📎 Upload Material"):
 
-        uploaded_file = st.file_uploader(
-            "File",
-            type=["pdf", "txt", "docx"],
-            label_visibility="collapsed",
-            key=f"uploader_{st.session_state.uploader_key}",
-        )
-        category = st.selectbox("Category", ["notes", "slides", "book", "assignment"])
+        tab_file, tab_yt = st.tabs(["📄 File", "▶️ YouTube"])
 
-        if uploaded_file:
-            existing = {d["filename"] for d in db.get_documents(course_id)}
-            if uploaded_file.name in existing:
-                st.warning(f"'{uploaded_file.name}' is already indexed. Delete it first to re-upload.")
-            else:
-                save_dir = Path("data") / "courses" / course_id / "uploads"
-                save_dir.mkdir(parents=True, exist_ok=True)
-                save_path = save_dir / uploaded_file.name
+        with tab_file:
+            uploaded_file = st.file_uploader(
+                "File",
+                type=["pdf", "txt", "docx"],
+                label_visibility="collapsed",
+                key=f"uploader_{st.session_state.uploader_key}",
+            )
+            category = st.selectbox("Category", ["notes", "slides", "book", "assignment"])
 
-                with open(save_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
+            if uploaded_file:
+                existing = {d["filename"] for d in db.get_documents(course_id)}
+                if uploaded_file.name in existing:
+                    st.warning(f"'{uploaded_file.name}' is already indexed. Delete it first to re-upload.")
+                else:
+                    save_dir = Path("data") / "courses" / course_id / "uploads"
+                    save_dir.mkdir(parents=True, exist_ok=True)
+                    save_path = save_dir / uploaded_file.name
 
-                file_type = Path(uploaded_file.name).suffix.lower().lstrip(".")
-                doc = db.add_document(course_id, uploaded_file.name, file_type, category)
+                    with open(save_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
 
-                with st.spinner("Indexing..."):
-                    chunk_count = ingest_file(
-                        str(save_path), course_id, uploaded_file.name, file_type, category, doc["id"]
-                    )
+                    file_type = Path(uploaded_file.name).suffix.lower().lstrip(".")
+                    doc = db.add_document(course_id, uploaded_file.name, file_type, category)
 
-                db.update_chunk_count(doc["id"], chunk_count)
-                st.session_state.uploader_key += 1
-                st.session_state["upload_toast"] = f"✓ {chunk_count} chunks indexed — {uploaded_file.name}"
+                    with st.spinner("Indexing..."):
+                        chunk_count = ingest_file(
+                            str(save_path), course_id, uploaded_file.name, file_type, category, doc["id"]
+                        )
+
+                    db.update_chunk_count(doc["id"], chunk_count)
+                    st.session_state.uploader_key += 1
+                    st.session_state["upload_toast"] = f"✓ {chunk_count} chunks indexed — {uploaded_file.name}"
+                    st.rerun()
+
+        with tab_yt:
+            yt_url = st.text_input("YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
+            if st.button("Add Lecture", use_container_width=True) and yt_url.strip():
+                _handle_youtube(course_id, yt_url.strip())
                 st.rerun()
 
         docs = db.get_documents(course_id)

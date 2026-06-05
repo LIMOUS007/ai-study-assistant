@@ -105,12 +105,12 @@ def delete_course(course_id: str):
 
 # --- Documents ---
 
-def add_document(course_id: str, filename: str, file_type: str, document_category: str) -> dict:
+def add_document(course_id: str, filename: str, file_type: str, document_category: str, source_url: str = None) -> dict:
     doc_id = str(uuid.uuid4())
     with get_connection() as conn:
         conn.execute(
-            "INSERT INTO documents (id, course_id, filename, file_type, document_category) VALUES (?, ?, ?, ?, ?)",
-            (doc_id, course_id, filename, file_type, document_category)
+            "INSERT INTO documents (id, course_id, filename, file_type, document_category, source_url) VALUES (?, ?, ?, ?, ?, ?)",
+            (doc_id, course_id, filename, file_type, document_category, source_url)
         )
         conn.commit()
     return get_document(doc_id)
