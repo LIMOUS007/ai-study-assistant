@@ -5,7 +5,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 import httpx
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain_community.document_loaders import YoutubeLoader
+import requests
+from youtube_transcript_api import YouTubeTranscriptApi
+from langchain_core.documents import Document
 
 def ingest_file(file_path, course_id, filename, file_type, document_category, document_id) -> int:
     suffix = Path(file_path).suffix.lower()
@@ -84,13 +86,17 @@ def ingest_youtube(url: str, course_id: str, document_id: str) -> tuple[str, int
     Raises TranscriptsDisabled or NoTranscriptFound from youtube_transcript_api
     if captions are unavailable — let the caller handle those for the UI error message.
     """
-    # add_video_info=False avoids the pytube dependency, which breaks with YouTube's current API.
-    loader = YoutubeLoader.from_youtube_url(url, add_video_info=False)
-    docs = loader.load()
-
     video_id = _video_id_from_url(url)
     title = f"YouTube: {video_id}"
 
+    # Pass a session with SSL verification disabled — required on networks with SSL inspection.
+    session = requests.Session()
+    session.verify = False
+    api = YouTubeTranscriptApi(http_client=session)
+    transcript = api.fetch(video_id)
+    full_text = " ".join(snippet.text for snippet in transcript)
+
+    docs = [Document(page_content=full_text)]
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.split_documents(docs)
 
