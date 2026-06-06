@@ -72,3 +72,28 @@ def build_rag_chain(course_id: str, system_prompt: str):
         return answer
 
     return RunnableLambda(run_chain)
+
+
+def build_academic_rag_chain(course_id: str, system_prompt: str):
+    # TODO: Academic mode RAG chain — same retriever as build_rag_chain, but uses
+    # PydanticOutputParser(AcademicResponse) and returns a flattened markdown string.
+    #
+    # Steps:
+    #   1. Set up vectorstore + retriever (copy the 4 lines from build_rag_chain)
+    #   2. Import from core.teaching:
+    #        from core.teaching import get_academic_parser, build_academic_prompt, academic_response_to_markdown
+    #   3. Inside run_chain(inputs):
+    #      a. Retrieve docs and format context (same as build_rag_chain)
+    #      b. Build the prompt: prompt = build_academic_prompt(system_prompt)
+    #      c. Get the parser: parser = get_academic_parser()
+    #      d. Invoke the chain:
+    #           result = (prompt | model | parser).invoke({
+    #               "context": context,
+    #               "history": inputs["history"],
+    #               "question": inputs["question"],
+    #           })
+    #      e. Flatten: answer = academic_response_to_markdown(result)
+    #      f. Append sources footnote (same pattern as build_rag_chain)
+    #      g. Return answer
+    #   4. Return RunnableLambda(run_chain)
+    raise NotImplementedError("Implement build_academic_rag_chain() after core/teaching.py is ready")
