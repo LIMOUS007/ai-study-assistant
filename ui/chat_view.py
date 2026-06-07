@@ -1,6 +1,8 @@
 import streamlit as st
 from core import database as db
 from core.chat import get_response
+from core.generator import generate_notes, generate_quiz, generate_flashcards
+from core.exporter import export_notes_pdf, export_quiz_pdf, export_flashcards_pdf
 
 
 def render_chat(course: dict):
@@ -8,7 +10,16 @@ def render_chat(course: dict):
     if course.get("course_prompt"):
         st.caption(f"📌 {course['course_prompt']}")
 
-    # --- Message history ---
+    tab_chat, tab_generate = st.tabs(["💬 Chat", "📚 Generate"])
+
+    with tab_chat:
+        _render_chat_tab(course)
+
+    with tab_generate:
+        _render_generate_tab(course)
+
+
+def _render_chat_tab(course: dict):
     messages = db.get_messages(course["id"])
 
     if not messages:
@@ -18,7 +29,6 @@ def render_chat(course: dict):
         with st.chat_message("user" if msg["role"] == "human" else "assistant"):
             st.markdown(msg["content"])
 
-    # --- Input ---
     user_input = st.chat_input(f"Ask anything about {course['name']}...")
 
     if user_input:
@@ -42,3 +52,128 @@ def render_chat(course: dict):
 
         db.add_message(course["id"], "ai", response)
         st.rerun()
+
+
+def _render_generate_tab(course: dict):
+    st.subheader("Generate Study Materials")
+
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        topic = st.text_input("Topic", placeholder="e.g. Deadlocks, Binary Search, Recursion")
+    with col2:
+        gen_type = st.selectbox("Type", ["Notes", "Quiz", "Flashcards"])
+
+    if gen_type == "Notes":
+        note_type = st.selectbox(
+            "Note style",
+            ["detailed", "revision", "exam", "cheat_sheet"],
+            format_func=lambda x: {
+                "detailed": "Detailed Notes",
+                "revision": "Revision Notes",
+                "exam": "Exam Notes",
+                "cheat_sheet": "Cheat Sheet",
+            }[x],
+        )
+    elif gen_type == "Quiz":
+        num_questions = st.slider("Number of questions", 3, 15, 5)
+    else:
+        num_cards = st.slider("Number of cards", 5, 20, 10)
+
+    if st.button("⚡ Generate", type="primary", disabled=not topic.strip()):
+        with st.spinner(f"Generating {gen_type.lower()}..."):
+            try:
+                if gen_type == "Notes":
+                    result = generate_notes(topic.strip(), note_type, course["id"])
+                elif gen_type == "Quiz":
+                    result = generate_quiz(topic.strip(), "mcq", course["id"], num_questions)
+                else:
+                    result = generate_flashcards(topic.strip(), course["id"], num_cards)
+                st.session_state["gen_result"] = result
+                st.session_state["gen_type"] = gen_type
+                st.session_state["fc_idx"] = 0
+                st.session_state["fc_flipped"] = False
+            except ValueError as e:
+                st.error(str(e))
+            except Exception as e:
+                st.error(f"Generation failed: {e}")
+
+    if "gen_result" in st.session_state and "gen_type" in st.session_state:
+        st.divider()
+        result = st.session_state["gen_result"]
+        result_type = st.session_state["gen_type"]
+        if result_type == "Notes":
+            _render_notes(result)
+        elif result_type == "Quiz":
+            _render_quiz(result)
+        else:
+            _render_flashcards(result)
+
+
+def _render_notes(document):
+    st.markdown(f"## {document.title}")
+    for section in document.sections:
+        st.markdown(f"### {section.heading}")
+        st.markdown(section.content)
+    pdf_bytes = export_notes_pdf(document)
+    st.download_button(
+        label="⬇ Download PDF",
+        data=pdf_bytes,
+        file_name=f"{document.title}.pdf",
+        mime="application/pdf",
+    )
+
+
+def _render_quiz(document):
+    st.markdown(f"## {document.title}")
+    for i, q in enumerate(document.questions, 1):
+        st.markdown(f"**Q{i}. {q.question}**")
+        for j, opt in enumerate(q.options):
+            st.markdown(f"- {chr(65 + j)}. {opt}")
+        with st.expander("Show Answer"):
+            st.success(f"**Correct:** {q.correct}")
+            st.markdown(q.explanation)
+        st.divider()
+    pdf_bytes = export_quiz_pdf(document)
+    st.download_button(
+        label="⬇ Download PDF",
+        data=pdf_bytes,
+        file_name=f"{document.title}.pdf",
+        mime="application/pdf",
+    )
+
+
+def _render_flashcards(deck):
+    cards = deck.cards
+    idx = st.session_state.get("fc_idx", 0)
+    flipped = st.session_state.get("fc_flipped", False)
+
+    st.markdown(f"## {deck.title}")
+    st.caption(f"Card {idx + 1} of {len(cards)}")
+
+    card = cards[idx]
+    if flipped:
+        st.info(f"**Back**\n\n{card.back}")
+    else:
+        st.info(f"**Front**\n\n{card.front}")
+
+    c1, c2, c3 = st.columns(3)
+    if c1.button("← Prev", disabled=idx == 0, use_container_width=True):
+        st.session_state["fc_idx"] = idx - 1
+        st.session_state["fc_flipped"] = False
+        st.rerun()
+    if c2.button("Flip ↔", use_container_width=True):
+        st.session_state["fc_flipped"] = not flipped
+        st.rerun()
+    if c3.button("Next →", disabled=idx == len(cards) - 1, use_container_width=True):
+        st.session_state["fc_idx"] = idx + 1
+        st.session_state["fc_flipped"] = False
+        st.rerun()
+
+    st.divider()
+    pdf_bytes = export_flashcards_pdf(deck)
+    st.download_button(
+        label="⬇ Download as PDF",
+        data=pdf_bytes,
+        file_name=f"{deck.title}.pdf",
+        mime="application/pdf",
+    )
