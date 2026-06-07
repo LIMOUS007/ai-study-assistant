@@ -11,6 +11,18 @@ def render_sidebar():
     st.caption("Your personal AI professor")
     st.divider()
 
+    # --- Response mode ---
+    if "chat_mode" not in st.session_state:
+        st.session_state["chat_mode"] = "academic"
+    st.radio(
+        "Response mode",
+        options=["academic", "quick"],
+        format_func=lambda x: "Academic" if x == "academic" else "Quick Answer",
+        key="chat_mode",
+        help="Academic: structured 9-section format. Quick Answer: plain prose.",
+    )
+    st.divider()
+
     # --- New Course ---
     if st.button("+ New Course", use_container_width=True):
         st.session_state.creating_course = True

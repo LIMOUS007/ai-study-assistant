@@ -6,6 +6,14 @@ from langchain_community.vectorstores import Chroma
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnableParallel, RunnableLambda
 from langchain_core.output_parsers import StrOutputParser
+from core.teaching import get_academic_parser, build_academic_prompt, academic_response_to_markdown
+
+
+RELEVANCE_THRESHOLD = 0.7
+
+
+def _filter_by_relevance(docs_and_scores: list) -> list:
+    return [doc for doc, score in docs_and_scores if score >= RELEVANCE_THRESHOLD]
 
 
 def _format_docs(docs) -> str:
@@ -36,64 +44,85 @@ def build_rag_chain(course_id: str, system_prompt: str):
     embeddings = OpenAIEmbeddings(http_client=httpx.Client(verify=False))
     client = chromadb.PersistentClient(path=str(vectorstore_path))
     vector_store = Chroma(client=client, embedding_function=embeddings)
-    retriever = vector_store.as_retriever(search_kwargs={"k": 4})
 
     rag_instruction = (
         "\n\nAnswer using ONLY the course material provided below. "
         "Do not use prior knowledge outside the provided context.\n\n"
         "{context}"
     )
-    prompt = ChatPromptTemplate.from_messages([
+    rag_prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt + rag_instruction),
+        MessagesPlaceholder("history"),
+        ("human", "{question}"),
+    ])
+    plain_prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
         MessagesPlaceholder("history"),
         ("human", "{question}"),
     ])
     model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
 
     def run_chain(inputs: dict) -> str:
-        docs = retriever.invoke(inputs["question"])
+        docs = _filter_by_relevance(
+            vector_store.similarity_search_with_relevance_scores(inputs["question"], k=4)
+        )
+
+        if not docs:
+            return (plain_prompt | model | StrOutputParser()).invoke({
+                "history": inputs["history"],
+                "question": inputs["question"],
+            })
+
         context = _format_docs(docs)
         sources = _unique_sources(docs)
-
-        answer = (
-            prompt
-            | model
-            | StrOutputParser()
-        ).invoke({
+        answer = (rag_prompt | model | StrOutputParser()).invoke({
             "context": context,
             "history": inputs["history"],
             "question": inputs["question"],
         })
-
-        if sources:
-            source_lines = "\n".join(f"- {s}" for s in sources)
-            answer += f"\n\n---\n**Sources**\n{source_lines}"
-
+        source_lines = "\n".join(f"- {s}" for s in sources)
+        answer += f"\n\n---\n**Sources**\n{source_lines}"
         return answer
 
     return RunnableLambda(run_chain)
 
 
 def build_academic_rag_chain(course_id: str, system_prompt: str):
-    # TODO: Academic mode RAG chain — same retriever as build_rag_chain, but uses
-    # PydanticOutputParser(AcademicResponse) and returns a flattened markdown string.
-    #
-    # Steps:
-    #   1. Set up vectorstore + retriever (copy the 4 lines from build_rag_chain)
-    #   2. Import from core.teaching:
-    #        from core.teaching import get_academic_parser, build_academic_prompt, academic_response_to_markdown
-    #   3. Inside run_chain(inputs):
-    #      a. Retrieve docs and format context (same as build_rag_chain)
-    #      b. Build the prompt: prompt = build_academic_prompt(system_prompt)
-    #      c. Get the parser: parser = get_academic_parser()
-    #      d. Invoke the chain:
-    #           result = (prompt | model | parser).invoke({
-    #               "context": context,
-    #               "history": inputs["history"],
-    #               "question": inputs["question"],
-    #           })
-    #      e. Flatten: answer = academic_response_to_markdown(result)
-    #      f. Append sources footnote (same pattern as build_rag_chain)
-    #      g. Return answer
-    #   4. Return RunnableLambda(run_chain)
-    raise NotImplementedError("Implement build_academic_rag_chain() after core/teaching.py is ready")
+    vectorstore_path = Path("vectorstore") / course_id
+    embeddings = OpenAIEmbeddings(http_client=httpx.Client(verify=False))
+    client = chromadb.PersistentClient(path=str(vectorstore_path))
+    vector_store = Chroma(client=client, embedding_function=embeddings)
+    academic_prompt = build_academic_prompt(system_prompt)
+    plain_prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        MessagesPlaceholder("history"),
+        ("human", "{question}"),
+    ])
+    parser = get_academic_parser()
+    model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
+
+    def run_chain(inputs: dict) -> str:
+        docs = _filter_by_relevance(
+            vector_store.similarity_search_with_relevance_scores(inputs["question"], k=4)
+        )
+
+        if not docs:
+            return (plain_prompt | model | StrOutputParser()).invoke({
+                "history": inputs["history"],
+                "question": inputs["question"],
+            })
+
+        context = _format_docs(docs)
+        sources = _unique_sources(docs)
+        answer = academic_response_to_markdown(
+            (academic_prompt | model | parser).invoke({
+                "context": context,
+                "history": inputs["history"],
+                "question": inputs["question"],
+            })
+        )
+        source_lines = "\n".join(f"- {s}" for s in sources)
+        answer += f"\n\n---\n**Sources**\n{source_lines}"
+        return answer
+
+    return RunnableLambda(run_chain)

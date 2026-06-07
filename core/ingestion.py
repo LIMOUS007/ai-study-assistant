@@ -71,7 +71,7 @@ def delete_document_chunks(course_id: str, document_id: str):
     if not vectorstore_path.exists():
         return
     vector_store = _get_vectorstore(course_id)
-    result = vector_store._collection.get(where={"document_id": document_id})
+    result = vector_store._collection.get(where={"document_id": {"$eq": document_id}})
     if result["ids"]:
         vector_store.delete(result["ids"])
 

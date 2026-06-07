@@ -4,6 +4,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from core import database as db
 from core.retrieval import build_rag_chain, build_academic_rag_chain
+from core.teaching import get_academic_parser, build_academic_prompt, academic_response_to_markdown
 
 
 def get_response(
@@ -56,15 +57,11 @@ Write in continuous, natural prose. Do NOT use rigid numbered sections, bold hea
             chain = build_academic_rag_chain(course_id, system_prompt)
             return chain.invoke({"history": lc_history, "question": user_message})
         else:
-            # TODO: Plain academic chain (no retriever). Implement after core/teaching.py is ready.
-            #
-            # from core.teaching import get_academic_parser, build_academic_prompt, academic_response_to_markdown
-            # parser = get_academic_parser()
-            # prompt = build_academic_prompt(system_prompt)
-            # result = (prompt | model | parser).invoke({
-            #     "context": "",
-            #     "history": lc_history,
-            #     "question": user_message,
-            # })
-            # return academic_response_to_markdown(result)
-            raise NotImplementedError("Academic mode (no documents) — implement after core/teaching.py is ready")
+            parser = get_academic_parser()
+            prompt = build_academic_prompt(system_prompt)
+            result = (prompt | model | parser).invoke({
+                "context": "",
+                "history": lc_history,
+                "question": user_message,
+            })
+            return academic_response_to_markdown(result)

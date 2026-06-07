@@ -8,20 +8,6 @@ def render_chat(course: dict):
     if course.get("course_prompt"):
         st.caption(f"📌 {course['course_prompt']}")
 
-    # Mode toggle — persists in session state for the duration of the session
-    if "chat_mode" not in st.session_state:
-        st.session_state["chat_mode"] = "academic"
-
-    st.radio(
-        "Response mode",
-        options=["academic", "quick"],
-        format_func=lambda x: "Academic" if x == "academic" else "Quick Answer",
-        horizontal=True,
-        key="chat_mode",
-        label_visibility="collapsed",
-        help="Academic: structured 9-section format (more tokens). Quick Answer: plain prose.",
-    )
-
     # --- Message history ---
     messages = db.get_messages(course["id"])
 
