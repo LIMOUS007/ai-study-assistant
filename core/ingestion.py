@@ -5,11 +5,13 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 import httpx
 import chromadb
 # from langchain_openai import OpenAIEmbeddings
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+# from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 import requests
 from youtube_transcript_api import YouTubeTranscriptApi
 from langchain_core.documents import Document
+from pptx import Presentation
 
 
 def _get_vectorstore(course_id: str) -> Chroma:
@@ -18,22 +20,46 @@ def _get_vectorstore(course_id: str) -> Chroma:
     vectorstore_path.mkdir(parents=True, exist_ok=True)
     client = chromadb.PersistentClient(path=str(vectorstore_path))
     # embeddings = OpenAIEmbeddings(http_client=httpx.Client(verify=False))
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+    # embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     return Chroma(client=client, embedding_function=embeddings)
+
+
+def _load_pptx(file_path: str) -> list[Document]:
+    prs = Presentation(file_path)
+    docs = []
+    for slide_num, slide in enumerate(prs.slides, 1):
+        texts = []
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                for para in shape.text_frame.paragraphs:
+                    line = " ".join(run.text for run in para.runs).strip()
+                    if line:
+                        texts.append(line)
+        if texts:
+            docs.append(Document(
+                page_content="\n".join(texts),
+                metadata={"page": slide_num},
+            ))
+    return docs
 
 
 def ingest_file(file_path, course_id, filename, file_type, document_category, document_id) -> int:
     suffix = Path(file_path).suffix.lower()
     if suffix == ".txt":
         loader = TextLoader(file_path, encoding="utf-8")
+        docs = loader.load()
     elif suffix == ".pdf":
         loader = PyPDFLoader(file_path)
+        docs = loader.load()
     elif suffix == ".docx":
         loader = Docx2txtLoader(file_path)
+        docs = loader.load()
+    elif suffix == ".pptx":
+        docs = _load_pptx(file_path)
     else:
         raise ValueError(f"Unsupported file type: {suffix}")
 
-    docs = loader.load()
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.split_documents(docs)
 

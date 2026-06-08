@@ -1,8 +1,12 @@
 streamlit
 langchain
 langchain-core
+langchain-text-splitters
 langchain-openai
 langchain-community
+langchain-groq
+langchain-huggingface
+sentence-transformers
 python-dotenv
 pydantic
 openai

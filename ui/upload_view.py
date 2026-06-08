@@ -58,7 +58,7 @@ def render_upload_popover(course: dict):
         with tab_file:
             uploaded_file = st.file_uploader(
                 "File",
-                type=["pdf", "txt", "docx"],
+                type=["pdf", "pptx", "txt", "docx"],
                 label_visibility="collapsed",
                 key=f"uploader_{st.session_state.uploader_key}",
             )

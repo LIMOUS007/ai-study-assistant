@@ -3,6 +3,7 @@ from core import database as db
 from core.chat import get_response
 from core.generator import generate_notes, generate_quiz, generate_flashcards, generate_practice_paper
 from core.exporter import export_notes_pdf, export_quiz_pdf, export_flashcards_pdf, export_practice_paper_pdf
+from ui.search_view import render_search
 
 
 def render_chat(course: dict):
@@ -10,13 +11,15 @@ def render_chat(course: dict):
     if course.get("course_prompt"):
         st.caption(f"📌 {course['course_prompt']}")
 
-    tab_chat, tab_generate = st.tabs(["💬 Chat", "📚 Generate"])
+    if "view" not in st.session_state:
+        st.session_state["view"] = "chat"
 
-    with tab_chat:
+    if st.session_state["view"] == "chat":
         _render_chat_tab(course)
-
-    with tab_generate:
+    elif st.session_state["view"] == "generate":
         _render_generate_tab(course)
+    else:
+        _render_search_tab(course)
 
 
 def _render_chat_tab(course: dict):
@@ -28,6 +31,16 @@ def _render_chat_tab(course: dict):
     for msg in messages:
         with st.chat_message("user" if msg["role"] == "human" else "assistant"):
             st.markdown(msg["content"])
+
+    c1, c2, c3, _ = st.columns([1, 1, 1, 5])
+    if c1.button("💬 Chat", type="primary", use_container_width=True):
+        pass
+    if c2.button("📚 Generate", use_container_width=True):
+        st.session_state["view"] = "generate"
+        st.rerun()
+    if c3.button("🔍 Search", use_container_width=True):
+        st.session_state["view"] = "search"
+        st.rerun()
 
     user_input = st.chat_input(f"Ask anything about {course['name']}...")
 
@@ -55,6 +68,16 @@ def _render_chat_tab(course: dict):
 
 
 def _render_generate_tab(course: dict):
+    c1, c2, c3, _ = st.columns([1, 1, 1, 5])
+    if c1.button("💬 Chat", use_container_width=True):
+        st.session_state["view"] = "chat"
+        st.rerun()
+    if c2.button("📚 Generate", type="primary", use_container_width=True):
+        pass
+    if c3.button("🔍 Search", use_container_width=True):
+        st.session_state["view"] = "search"
+        st.rerun()
+
     st.subheader("Generate Study Materials")
 
     gen_type = st.selectbox("Type", ["Notes", "Quiz", "Flashcards", "Exam Prep"])
@@ -104,6 +127,7 @@ def _render_generate_tab(course: dict):
                     result = generate_practice_paper(course["id"], course["name"], exam_instructions)
                 st.session_state["gen_result"] = result
                 st.session_state["gen_type"] = gen_type
+                st.session_state["gen_course_id"] = course["id"]
                 st.session_state["fc_idx"] = 0
                 st.session_state["fc_flipped"] = False
             except ValueError as e:
@@ -111,7 +135,11 @@ def _render_generate_tab(course: dict):
             except Exception as e:
                 st.error(f"Generation failed: {e}")
 
-    if "gen_result" in st.session_state and "gen_type" in st.session_state:
+    if (
+        "gen_result" in st.session_state
+        and "gen_type" in st.session_state
+        and st.session_state.get("gen_course_id") == course["id"]
+    ):
         st.divider()
         result = st.session_state["gen_result"]
         result_type = st.session_state["gen_type"]
@@ -218,3 +246,18 @@ def _render_practice_paper(paper):
         file_name=f"{paper.course_name} - Practice Paper.pdf",
         mime="application/pdf",
     )
+
+
+def _render_search_tab(course: dict):
+    c1, c2, c3, _ = st.columns([1, 1, 1, 5])
+    if c1.button("💬 Chat", use_container_width=True):
+        st.session_state["view"] = "chat"
+        st.rerun()
+    if c2.button("📚 Generate", use_container_width=True):
+        st.session_state["view"] = "generate"
+        st.rerun()
+    if c3.button("🔍 Search", type="primary", use_container_width=True):
+        pass
+
+    st.subheader("Semantic Search")
+    render_search(course)
