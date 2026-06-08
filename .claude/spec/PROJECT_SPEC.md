@@ -264,7 +264,6 @@ Encoded as a system prompt + `AcademicResponse` Pydantic model.
 - `AcademicResponse` Pydantic model (9 fields)
 - Mode toggle: "Academic" (default) vs "Quick Answer"
 - Each section rendered with its own heading in the chat
-- **"Explain Again" buttons** beside every response: "Explain Simpler", "Explain Deeper", "Give More Examples" — re-runs the chain with a modifier prompt using the same retrieved context (no second retrieval needed)
 
 **LangChain concepts:**
 - `PydanticOutputParser` with `AcademicResponse`
@@ -301,8 +300,6 @@ class AcademicResponse(BaseModel):
 - [ ] Quick mode returns plain prose
 - [ ] Mode toggle persists within the session
 - [ ] Optional fields (analogy, common_mistakes) render only when present
-- [ ] "Explain Simpler" / "Explain Deeper" / "Give More Examples" buttons appear under each response
-- [ ] Clicking them re-uses the same retrieved context without a second retrieval call
 
 ---
 

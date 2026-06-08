@@ -9,5 +9,9 @@ openai
 chromadb
 pypdf
 python-pptx
+docx2txt
+fpdf2
+httpx
+requests
 pytest
 youtube-transcript-api

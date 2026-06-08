@@ -22,11 +22,12 @@ class AcademicResponse(BaseModel):
 
 def academic_response_to_markdown(response: AcademicResponse) -> str:
     parts = [
-        response.professor_explanation,
-        response.beginner_explanation,
+        f"#### {response.question_repeated}",
+        f"#### Professor's Explanation\n\n{response.professor_explanation}",
+        f"#### In Simple Terms\n\n{response.beginner_explanation}",
     ]
     if response.analogy:
-        parts.append(response.analogy)
+        parts.append(f"#### Analogy\n\n{response.analogy}")
     parts += [
         f"#### Theory & Concepts\n\n{response.theory_and_concepts}",
         f"#### Worked Examples\n\n{response.worked_examples}",
