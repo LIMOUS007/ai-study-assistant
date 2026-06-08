@@ -2,9 +2,10 @@ import os
 import httpx
 import chromadb
 from pathlib import Path
+from langchain_openai import ChatOpenAI
 # from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 # from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain_groq import ChatGroq
+# from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -68,7 +69,8 @@ def build_rag_chain(course_id: str, system_prompt: str):
     ])
     # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
     # model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
-    model = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("groq_api_key"), http_client=httpx.Client(verify=False))
+    # model = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("groq_api_key"), http_client=httpx.Client(verify=False))
+    model = ChatOpenAI(model="gpt-oss-120b", base_url="https://api.cerebras.ai/v1", api_key=os.getenv("CEREBRAS_API_KEY"), http_client=httpx.Client(verify=False))
 
     def run_chain(inputs: dict) -> str:
         docs = _filter_by_relevance(
@@ -117,7 +119,8 @@ def build_academic_rag_chain(course_id: str, system_prompt: str):
     ])
     # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
     # model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
-    model = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("groq_api_key"), http_client=httpx.Client(verify=False))
+    # model = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("groq_api_key"), http_client=httpx.Client(verify=False))
+    model = ChatOpenAI(model="gpt-oss-120b", base_url="https://api.cerebras.ai/v1", api_key=os.getenv("CEREBRAS_API_KEY"), http_client=httpx.Client(verify=False))
 
     def run_chain(inputs: dict) -> str:
         docs = _filter_by_relevance(

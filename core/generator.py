@@ -1,8 +1,12 @@
+import os
 from pydantic import BaseModel
-from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_openai import ChatOpenAI
 # from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+# from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+# from langchain_groq import ChatGroq
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 import chromadb, httpx
 from pathlib import Path
@@ -56,7 +60,8 @@ class PracticePaper(BaseModel):
 def retrieve_context(topic: str, course_id: str, k: int = 6) -> str:
     vectorstore_path = Path("vectorstore") / course_id
     # embeddings = OpenAIEmbeddings(http_client=httpx.Client(verify=False))
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+    # embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     client = chromadb.PersistentClient(path=str(vectorstore_path))
     vector_store = Chroma(client=client, embedding_function=embeddings)
     docs = vector_store.similarity_search(topic, k=k)
@@ -73,59 +78,75 @@ def retrieve_context(topic: str, course_id: str, k: int = 6) -> str:
 
 # ─── GENERATORS ───────────────────────────────────────────────────────────────
 
+_NOTE_SYSTEM_PROMPTS = {
+    "detailed": (
+        "You are a professor writing comprehensive open-book exam notes.\n"
+        "Write in full prose paragraphs like a textbook. Each concept gets:\n"
+        "- A full definition paragraph\n"
+        "- A 'Exam move:' callout\n"
+        "- A 'Pitfall:' callout\n"
+        "- A fully-traced worked example with real input, step-by-step execution, "
+        "complete code (not pseudocode), and Time/Space complexity\n"
+        "End with a summary section covering key patterns and common exam questions.\n"
+        "Be long, thorough, and detailed. Use only the course material below."
+    ),
+    "revision": (
+        "You are writing REVISION NOTES. Use ONLY bullet points — zero prose paragraphs.\n"
+        "Each section must be scannable in under 30 seconds.\n"
+        "Format per concept:\n"
+        "• Definition: [one line]\n"
+        "• Key property: [one line]\n"
+        "• Complexity: [O(?) best/avg/worst]\n"
+        "• Example: [one 2-line trace, no full code]\n"
+        "No callout labels, no full sentences, no theory. Bullet points only.\n"
+        "Use only the course material below."
+    ),
+    "exam": (
+        "You are writing EXAM CHEAT NOTES. Absolutely NO prose.\n"
+        "Each section contains ONLY:\n"
+        "- Complexity table (Best | Avg | Worst | Space)\n"
+        "- 'Exam move:' bullets — techniques that score marks\n"
+        "- 'Pitfall:' bullets — traps students fall into\n"
+        "- 'Common mistake:' bullets — frequent errors\n"
+        "End with a fast-revision checklist (tick-box style).\n"
+        "If a section has no callouts, do not include it.\n"
+        "Use only the course material below."
+    ),
+    "cheat_sheet": (
+        "You are writing a ONE-PAGE CHEAT SHEET. Ultra-compact.\n"
+        "Rules:\n"
+        "- Max 5 words per bullet point\n"
+        "- Complexities and formulas ONLY\n"
+        "- No examples, no explanations, no full sentences\n"
+        "- No callout labels\n"
+        "Every section is a list of 3-6 ultra-short bullets. Nothing else.\n"
+        "Use only the course material below."
+    ),
+}
+
+
 def generate_notes(topic: str, note_type: str, course_id: str) -> NoteDocument:
     context = retrieve_context(topic, course_id)
     if not context:
         raise ValueError("No course material found for this topic.")
 
-    parser = PydanticOutputParser(pydantic_object=NoteDocument)
-    format_instructions = parser.get_format_instructions()
-
+    system = _NOTE_SYSTEM_PROMPTS.get(note_type, _NOTE_SYSTEM_PROMPTS["detailed"])
     prompt = ChatPromptTemplate.from_messages([
-        ("system",
-         "You are a professor writing open-book university exam notes. "
-         "Write like a textbook, not a blog. Be dense, precise, and academic.\n\n"
-         "STRUCTURE:\n"
-         "- Use hierarchical numbered sections: '1 Topic', '1.1 Subtopic', '1.2 Subtopic'\n"
-         "- Each new concept: definition → core idea → why it matters → complexity if applicable\n\n"
-         "CALLOUTS — include naturally throughout:\n"
-         "- 'Exam move:' — technique or insight that scores marks\n"
-         "- 'Pitfall:' — common error and how to avoid it\n"
-         "- 'Common mistake:' — what students typically get wrong\n\n"
-         "WORKED EXAMPLES — after every major concept:\n"
-         "- State the problem, give high-level reasoning, trace execution step-by-step on real input, "
-         "then show the full correct code (not pseudocode), end with Time/Space complexity.\n\n"
-         "END OF NOTES: one tight summary section — key patterns, common exam questions, "
-         "or fast-revision checklist, whichever fits best.\n\n"
-         "DEPTH — adapt based on note_type='{note_type}':\n"
-         "- detailed: everything above, fully elaborated, multiple examples per concept\n"
-         "- revision: key definitions + one example per concept, skip deep theory\n"
-         "- exam: callouts, patterns, complexity tables, summary only — no prose\n"
-         "- cheat_sheet: bullet points only, no prose, no full code, maximum density\n\n"
-         "Topic to cover: {topic}\n\n"
-         "Use ONLY the course material below. Do not use outside knowledge.\n"
-         "{context}\n\n"
-         "{format_instructions}"),
+        ("system", system + "\n\nTopic: {topic}\n\nCourse material:\n{context}"),
     ])
 
     # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
-    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
-    chain = prompt | model | parser
-    return chain.invoke({
-        "topic": topic,
-        "note_type": note_type,
-        "context": context,
-        "format_instructions": format_instructions,
-    })
+    # model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+    # model = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("groq_api_key"), http_client=httpx.Client(verify=False))
+    model = ChatOpenAI(model="gpt-oss-120b", base_url="https://api.cerebras.ai/v1", api_key=os.getenv("CEREBRAS_API_KEY"), http_client=httpx.Client(verify=False))
+    chain = prompt | model.with_structured_output(NoteDocument)
+    return chain.invoke({"topic": topic, "context": context})
 
 
 def generate_quiz(topic: str, quiz_type: str, course_id: str, num_questions: int = 5) -> QuizDocument:
     context = retrieve_context(topic, course_id)
     if not context:
         raise ValueError("No course material found for this topic.")
-
-    parser = PydanticOutputParser(pydantic_object=QuizDocument)
-    format_instructions = parser.get_format_instructions()
 
     prompt = ChatPromptTemplate.from_messages([
         ("system",
@@ -140,18 +161,18 @@ def generate_quiz(topic: str, quiz_type: str, course_id: str, num_questions: int
          "and why the others are wrong.\n"
          "- Questions must be exam-style difficulty — no trivial or obvious questions.\n"
          "- Cover different parts of the material, not the same concept repeatedly.\n\n"
-         "Course material:\n{context}\n\n"
-         "{format_instructions}"),
+         "Course material:\n{context}"),
     ])
 
     # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
-    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
-    chain = prompt | model | parser
+    # model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+    # model = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("groq_api_key"), http_client=httpx.Client(verify=False))
+    model = ChatOpenAI(model="gpt-oss-120b", base_url="https://api.cerebras.ai/v1", api_key=os.getenv("CEREBRAS_API_KEY"), http_client=httpx.Client(verify=False))
+    chain = prompt | model.with_structured_output(QuizDocument)
     return chain.invoke({
         "topic": topic,
         "num_questions": num_questions,
         "context": context,
-        "format_instructions": format_instructions,
     })
 
 
@@ -159,9 +180,6 @@ def generate_flashcards(topic: str, course_id: str, num_cards: int = 10) -> Flas
     context = retrieve_context(topic, course_id)
     if not context:
         raise ValueError("No course material found for this topic.")
-
-    parser = PydanticOutputParser(pydantic_object=FlashcardDeck)
-    format_instructions = parser.get_format_instructions()
 
     prompt = ChatPromptTemplate.from_messages([
         ("system",
@@ -175,18 +193,18 @@ def generate_flashcards(topic: str, course_id: str, num_cards: int = 10) -> Flas
          "- No duplicates. Each card must test something distinct.\n"
          "- Prioritize high-yield exam concepts: definitions, formulas, key distinctions, "
          "common pitfalls.\n\n"
-         "Course material:\n{context}\n\n"
-         "{format_instructions}"),
+         "Course material:\n{context}"),
     ])
 
     # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
-    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
-    chain = prompt | model | parser
+    # model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+    # model = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("groq_api_key"), http_client=httpx.Client(verify=False))
+    model = ChatOpenAI(model="gpt-oss-120b", base_url="https://api.cerebras.ai/v1", api_key=os.getenv("CEREBRAS_API_KEY"), http_client=httpx.Client(verify=False))
+    chain = prompt | model.with_structured_output(FlashcardDeck)
     return chain.invoke({
         "topic": topic,
         "num_cards": num_cards,
         "context": context,
-        "format_instructions": format_instructions,
     })
 
 
@@ -195,9 +213,6 @@ def generate_practice_paper(course_id: str, course_name: str, instructions: str)
     context = retrieve_context("exam topics key concepts overview", course_id, k=12)
     if not context:
         raise ValueError("No course material found. Upload documents first.")
-
-    parser = PydanticOutputParser(pydantic_object=PracticePaper)
-    format_instructions = parser.get_format_instructions()
 
     prompt = ChatPromptTemplate.from_messages([
         ("system",
@@ -217,12 +232,16 @@ def generate_practice_paper(course_id: str, course_name: str, instructions: str)
          "{format_instructions}"),
     ])
 
+    parser = JsonOutputParser(pydantic_object=PracticePaper)
     # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
-    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
-    chain = prompt | model | parser
+    # model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+    # model = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("groq_api_key"), http_client=httpx.Client(verify=False))
+    model = ChatOpenAI(model="gpt-oss-120b", base_url="https://api.cerebras.ai/v1", api_key=os.getenv("CEREBRAS_API_KEY"), http_client=httpx.Client(verify=False))
+    model_json = model.bind(response_format={"type": "json_object"})
+    chain = prompt | model_json | parser
     return chain.invoke({
         "course_name": course_name,
         "instructions": instructions or "Standard university exam paper. Cover all major topics.",
         "context": context,
-        "format_instructions": format_instructions,
+        "format_instructions": parser.get_format_instructions(),
     })

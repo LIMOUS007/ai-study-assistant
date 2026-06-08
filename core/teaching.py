@@ -4,6 +4,18 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import PydanticOutputParser
 
 
+def is_academic_question(message: str, model) -> bool:
+    result = model.invoke([
+        {"role": "system", "content": (
+            "Reply with only 'yes' or 'no'. No other text.\n"
+            "Answer 'yes' ONLY if the message asks for an explanation, definition, or technical breakdown of a specific concept or topic (e.g. 'explain binary search', 'what is recursion', 'how does quicksort work').\n"
+            "Answer 'no' for: greetings, thanks, questions about documents/notes/PDFs/course overview, vague questions, or anything conversational."
+        )},
+        {"role": "user", "content": f"Message: {message}"},
+    ])
+    return result.content.strip().lower().startswith("y")
+
+
 class QAPair(BaseModel):
     question: str
     answer: str
@@ -20,26 +32,24 @@ class AcademicResponse(BaseModel):
     practice_questions: list[QAPair]
 
 
+def _val(s) -> str | None:
+    return s if s and str(s).strip().lower() not in ("null", "none", "") else None
+
+
 def academic_response_to_markdown(response: AcademicResponse) -> str:
-    parts = [
-        f"#### {response.question_repeated}",
-        f"#### Professor's Explanation\n\n{response.professor_explanation}",
-        f"#### In Simple Terms\n\n{response.beginner_explanation}",
-    ]
-    if response.analogy:
-        parts.append(f"#### Analogy\n\n{response.analogy}")
-    parts += [
-        f"#### Theory & Concepts\n\n{response.theory_and_concepts}",
-        f"#### Worked Examples\n\n{response.worked_examples}",
-    ]
-    if response.common_mistakes:
-        parts.append(f"#### Common Mistakes\n\n{response.common_mistakes}")
+    parts = []
+    for field in (response.professor_explanation, response.beginner_explanation,
+                  response.analogy, response.theory_and_concepts, response.worked_examples,
+                  response.common_mistakes):
+        v = _val(field)
+        if v:
+            parts.append(v)
     if response.practice_questions:
         qa_blocks = [
             f"**{i}.** {qa.question}\n\n{qa.answer}"
             for i, qa in enumerate(response.practice_questions, 1)
         ]
-        parts.append(f"#### Practice Questions\n\n" + "\n\n".join(qa_blocks))
+        parts.append("\n\n".join(qa_blocks))
     return "\n\n".join(parts)
 
 

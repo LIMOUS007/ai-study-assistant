@@ -53,7 +53,7 @@ def render_upload_popover(course: dict):
         if _ERROR_KEY in st.session_state:
             st.error(st.session_state.pop(_ERROR_KEY))
 
-        tab_file, tab_yt = st.tabs(["📄 File", "▶️ YouTube"])
+        tab_file, tab_text, tab_yt = st.tabs(["📄 File", "📝 Text", "▶️ YouTube"])
 
         with tab_file:
             uploaded_file = st.file_uploader(
@@ -92,6 +92,52 @@ def render_upload_popover(course: dict):
                         db.delete_document(doc["id"])
                         save_path.unlink(missing_ok=True)
                         st.session_state[_ERROR_KEY] = f"Failed to index file: {e}"
+                        st.session_state.uploader_key += 1
+                        st.rerun()
+
+        with tab_text:
+            text_title = st.text_input(
+                "Title",
+                placeholder="e.g. Week 3 Lecture Notes",
+                key=f"text_title_{course_id}_{st.session_state.uploader_key}",
+            )
+            text_content = st.text_area(
+                "Content",
+                placeholder="Paste or type your notes here...",
+                height=160,
+                key=f"text_content_{course_id}_{st.session_state.uploader_key}",
+            )
+            text_category = st.selectbox(
+                "Category",
+                ["notes", "slides", "book", "assignment"],
+                key=f"text_category_{course_id}",
+            )
+            can_add = bool(text_title.strip()) and bool(text_content.strip())
+            if st.button("Add Notes", use_container_width=True, disabled=not can_add):
+                filename = text_title.strip().replace("/", "-") + ".txt"
+                existing = {d["filename"] for d in db.get_documents(course_id)}
+                if filename in existing:
+                    st.session_state[_ERROR_KEY] = f"'{filename}' is already indexed. Use a different title."
+                    st.rerun()
+                else:
+                    save_dir = Path("data") / "courses" / course_id / "uploads"
+                    save_dir.mkdir(parents=True, exist_ok=True)
+                    save_path = save_dir / filename
+                    save_path.write_text(text_content.strip(), encoding="utf-8")
+                    doc = db.add_document(course_id, filename, "txt", text_category)
+                    try:
+                        with st.spinner("Indexing..."):
+                            chunk_count = ingest_file(
+                                str(save_path), course_id, filename, "txt", text_category, doc["id"]
+                            )
+                        db.update_chunk_count(doc["id"], chunk_count)
+                        st.session_state.uploader_key += 1
+                        st.session_state[_TOAST_KEY] = f"✓ {chunk_count} chunks indexed — {filename}"
+                        st.rerun()
+                    except Exception as e:
+                        db.delete_document(doc["id"])
+                        save_path.unlink(missing_ok=True)
+                        st.session_state[_ERROR_KEY] = f"Failed to index text: {e}"
                         st.session_state.uploader_key += 1
                         st.rerun()
 

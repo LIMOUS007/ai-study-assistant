@@ -1,11 +1,14 @@
+import os
 import httpx
-# from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
+# from langchain_google_genai import ChatGoogleGenerativeAI
+# from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.output_parsers import StrOutputParser
 from core import database as db
 from core.retrieval import build_rag_chain, build_academic_rag_chain
-from core.teaching import get_academic_parser, build_academic_prompt, academic_response_to_markdown
+from core.teaching import build_academic_prompt, academic_response_to_markdown, AcademicResponse, is_academic_question
 
 
 def get_response(
@@ -24,7 +27,9 @@ def get_response(
             lc_history.append(AIMessage(content=message["content"]))
 
     # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
-    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
+    # model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+    # model = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("groq_api_key"), http_client=httpx.Client(verify=False))
+    model = ChatOpenAI(model="gpt-oss-120b", base_url="https://api.cerebras.ai/v1", api_key=os.getenv("CEREBRAS_API_KEY"), http_client=httpx.Client(verify=False))
 
     if mode == "quick":
         teaching_philosophy = """
@@ -59,9 +64,18 @@ Write in continuous, natural prose. Do NOT use rigid numbered sections, bold hea
             chain = build_academic_rag_chain(course_id, system_prompt)
             return chain.invoke({"history": lc_history, "question": user_message})
         else:
-            parser = get_academic_parser()
+            plain_prompt = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
+                MessagesPlaceholder("history"),
+                ("human", "{question}"),
+            ])
+            if not is_academic_question(user_message, model):
+                return (plain_prompt | model | StrOutputParser()).invoke({
+                    "history": lc_history,
+                    "question": user_message,
+                })
             prompt = build_academic_prompt(system_prompt)
-            result = (prompt | model | parser).invoke({
+            result = (prompt | model.with_structured_output(AcademicResponse)).invoke({
                 "context": "",
                 "history": lc_history,
                 "question": user_message,
