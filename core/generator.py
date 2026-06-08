@@ -1,7 +1,8 @@
 from pydantic import BaseModel
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+# from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
 import chromadb, httpx
 from pathlib import Path
@@ -35,12 +36,27 @@ class FlashcardDeck(BaseModel):
     title: str
     cards: list[Flashcard]
 
+class ExamQuestion(BaseModel):
+    question: str
+    marks: int
+    model_answer: str
+
+class PaperSection(BaseModel):
+    section_name: str
+    instructions: str
+    questions: list[ExamQuestion]
+
+class PracticePaper(BaseModel):
+    course_name: str
+    sections: list[PaperSection]
+
 
 # ─── HELPER ───────────────────────────────────────────────────────────────────
 
 def retrieve_context(topic: str, course_id: str, k: int = 6) -> str:
     vectorstore_path = Path("vectorstore") / course_id
-    embeddings = OpenAIEmbeddings(http_client=httpx.Client(verify=False))
+    # embeddings = OpenAIEmbeddings(http_client=httpx.Client(verify=False))
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
     client = chromadb.PersistentClient(path=str(vectorstore_path))
     vector_store = Chroma(client=client, embedding_function=embeddings)
     docs = vector_store.similarity_search(topic, k=k)
@@ -92,7 +108,8 @@ def generate_notes(topic: str, note_type: str, course_id: str) -> NoteDocument:
          "{format_instructions}"),
     ])
 
-    model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
+    # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
+    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
     chain = prompt | model | parser
     return chain.invoke({
         "topic": topic,
@@ -127,7 +144,8 @@ def generate_quiz(topic: str, quiz_type: str, course_id: str, num_questions: int
          "{format_instructions}"),
     ])
 
-    model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
+    # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
+    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
     chain = prompt | model | parser
     return chain.invoke({
         "topic": topic,
@@ -161,11 +179,50 @@ def generate_flashcards(topic: str, course_id: str, num_cards: int = 10) -> Flas
          "{format_instructions}"),
     ])
 
-    model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
+    # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
+    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
     chain = prompt | model | parser
     return chain.invoke({
         "topic": topic,
         "num_cards": num_cards,
+        "context": context,
+        "format_instructions": format_instructions,
+    })
+
+
+def generate_practice_paper(course_id: str, course_name: str, instructions: str) -> PracticePaper:
+    # k=12 for broad topic coverage across the full course, not just one concept
+    context = retrieve_context("exam topics key concepts overview", course_id, k=12)
+    if not context:
+        raise ValueError("No course material found. Upload documents first.")
+
+    parser = PydanticOutputParser(pydantic_object=PracticePaper)
+    format_instructions = parser.get_format_instructions()
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system",
+         "You are a professor setting a university exam paper for the course: {course_name}.\n\n"
+         "INSTRUCTOR INSTRUCTIONS:\n{instructions}\n\n"
+         "PAPER REQUIREMENTS:\n"
+         "- Create exactly 3 sections: Section A (MCQ, 1-2 marks each), "
+         "Section B (Short Answer, 3-5 marks each), Section C (Long Answer, 10-15 marks each)\n"
+         "- Section A: 5 MCQ questions (include the options in the question text itself)\n"
+         "- Section B: 3 short answer questions\n"
+         "- Section C: 2 long answer questions\n"
+         "- Each section must have a brief instruction line (e.g. 'Attempt all questions. 1 mark each.')\n"
+         "- Every question MUST have a complete model answer — not a hint, the full answer\n"
+         "- Questions must be exam-quality and grounded in the course material below\n"
+         "- Do not repeat concepts across questions\n\n"
+         "COURSE MATERIAL:\n{context}\n\n"
+         "{format_instructions}"),
+    ])
+
+    # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
+    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
+    chain = prompt | model | parser
+    return chain.invoke({
+        "course_name": course_name,
+        "instructions": instructions or "Standard university exam paper. Cover all major topics.",
         "context": context,
         "format_instructions": format_instructions,
     })

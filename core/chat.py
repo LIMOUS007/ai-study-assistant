@@ -1,5 +1,6 @@
 import httpx
-from langchain_openai import ChatOpenAI
+# from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from core import database as db
@@ -22,7 +23,8 @@ def get_response(
         elif message["role"] == "ai":
             lc_history.append(AIMessage(content=message["content"]))
 
-    model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
+    # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
+    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
 
     if mode == "quick":
         teaching_philosophy = """

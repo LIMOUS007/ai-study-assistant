@@ -1,7 +1,8 @@
 import httpx
 import chromadb
 from pathlib import Path
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+# from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnableParallel, RunnableLambda
@@ -41,7 +42,8 @@ def _unique_sources(docs) -> list[str]:
 
 def build_rag_chain(course_id: str, system_prompt: str):
     vectorstore_path = Path("vectorstore") / course_id
-    embeddings = OpenAIEmbeddings(http_client=httpx.Client(verify=False))
+    # embeddings = OpenAIEmbeddings(http_client=httpx.Client(verify=False))
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
     client = chromadb.PersistentClient(path=str(vectorstore_path))
     vector_store = Chroma(client=client, embedding_function=embeddings)
 
@@ -60,7 +62,8 @@ def build_rag_chain(course_id: str, system_prompt: str):
         MessagesPlaceholder("history"),
         ("human", "{question}"),
     ])
-    model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
+    # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
+    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
 
     def run_chain(inputs: dict) -> str:
         docs = _filter_by_relevance(
@@ -89,7 +92,8 @@ def build_rag_chain(course_id: str, system_prompt: str):
 
 def build_academic_rag_chain(course_id: str, system_prompt: str):
     vectorstore_path = Path("vectorstore") / course_id
-    embeddings = OpenAIEmbeddings(http_client=httpx.Client(verify=False))
+    # embeddings = OpenAIEmbeddings(http_client=httpx.Client(verify=False))
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
     client = chromadb.PersistentClient(path=str(vectorstore_path))
     vector_store = Chroma(client=client, embedding_function=embeddings)
     academic_prompt = build_academic_prompt(system_prompt)
@@ -99,7 +103,8 @@ def build_academic_rag_chain(course_id: str, system_prompt: str):
         ("human", "{question}"),
     ])
     parser = get_academic_parser()
-    model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
+    # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
+    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
 
     def run_chain(inputs: dict) -> str:
         docs = _filter_by_relevance(

@@ -1,6 +1,6 @@
 import re
 from fpdf import FPDF
-from core.generator import NoteDocument, QuizDocument, FlashcardDeck
+from core.generator import NoteDocument, QuizDocument, FlashcardDeck, PracticePaper
 
 
 def _clean(text: str) -> str:
@@ -68,4 +68,37 @@ def export_flashcards_pdf(deck: FlashcardDeck) -> bytes:
         pdf.set_font("Helvetica", "", 11)
         pdf.multi_cell(0, 6, _safe(f"   {_clean(card.back)}"))
         pdf.ln(3)
+    return bytes(pdf.output())
+
+
+def export_practice_paper_pdf(paper: PracticePaper) -> bytes:
+    pdf = _new_pdf()
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.multi_cell(0, 10, _safe(_clean(paper.course_name)))
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "I", 12)
+    pdf.multi_cell(0, 7, _safe("Practice Examination Paper"))
+    pdf.ln(6)
+
+    q_num = 1
+    for section in paper.sections:
+        pdf.set_font("Helvetica", "B", 14)
+        pdf.multi_cell(0, 9, _safe(_clean(section.section_name)))
+        pdf.ln(1)
+        pdf.set_font("Helvetica", "I", 11)
+        pdf.multi_cell(0, 6, _safe(_clean(section.instructions)))
+        pdf.ln(3)
+
+        for q in section.questions:
+            marks_label = f"[{q.marks} mark{'s' if q.marks != 1 else ''}]"
+            pdf.set_font("Helvetica", "B", 12)
+            pdf.multi_cell(0, 7, _safe(f"Q{q_num}. {_clean(q.question)}  {marks_label}"))
+            pdf.ln(1)
+            pdf.set_font("Helvetica", "I", 11)
+            pdf.multi_cell(0, 6, _safe(f"Model Answer: {_clean(q.model_answer)}"))
+            pdf.ln(4)
+            q_num += 1
+
+        pdf.ln(3)
+
     return bytes(pdf.output())

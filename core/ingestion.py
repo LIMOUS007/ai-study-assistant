@@ -4,7 +4,8 @@ from langchain_community.document_loaders import PyPDFLoader, TextLoader, Docx2t
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import httpx
 import chromadb
-from langchain_openai import OpenAIEmbeddings
+# from langchain_openai import OpenAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
 import requests
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -16,7 +17,8 @@ def _get_vectorstore(course_id: str) -> Chroma:
     vectorstore_path = Path("vectorstore") / course_id
     vectorstore_path.mkdir(parents=True, exist_ok=True)
     client = chromadb.PersistentClient(path=str(vectorstore_path))
-    embeddings = OpenAIEmbeddings(http_client=httpx.Client(verify=False))
+    # embeddings = OpenAIEmbeddings(http_client=httpx.Client(verify=False))
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
     return Chroma(client=client, embedding_function=embeddings)
 
 
