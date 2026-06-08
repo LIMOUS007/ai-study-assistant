@@ -53,15 +53,18 @@ def _render_chat_tab(course: dict):
 
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                response = get_response(
+                response, usage = get_response(
                     user_message=user_input,
                     course_name=course["name"],
                     course_prompt=course.get("course_prompt") or "",
                     chat_history=history,
                     course_id=course["id"],
                     mode=st.session_state["chat_mode"],
+                    provider=st.session_state.get("provider", "cerebras"),
                 )
             st.markdown(response)
+            token_str = f"{usage['tokens']} tokens" if usage.get("tokens") else ""
+            st.caption(f"{usage['model']}" + (f" · {token_str}" if token_str else ""))
 
         db.add_message(course["id"], "ai", response)
         st.rerun()
@@ -90,11 +93,7 @@ def _render_generate_tab(course: dict):
         )
         can_generate = True
     else:
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            topic = st.text_input("Topic", placeholder="e.g. Deadlocks, Binary Search, Recursion")
-        with col2:
-            pass
+        topic = st.text_input("Topic", placeholder="e.g. Deadlocks, Binary Search, Recursion")
 
         if gen_type == "Notes":
             note_type = st.selectbox(
@@ -116,15 +115,16 @@ def _render_generate_tab(course: dict):
 
     if st.button("⚡ Generate", type="primary", disabled=not can_generate):
         with st.spinner(f"Generating {gen_type.lower()}..."):
+            provider = st.session_state.get("provider", "cerebras")
             try:
                 if gen_type == "Notes":
-                    result = generate_notes(topic.strip(), note_type, course["id"])
+                    result = generate_notes(topic.strip(), note_type, course["id"], provider)
                 elif gen_type == "Quiz":
-                    result = generate_quiz(topic.strip(), "mcq", course["id"], num_questions)
+                    result = generate_quiz(topic.strip(), course["id"], num_questions, provider)
                 elif gen_type == "Flashcards":
-                    result = generate_flashcards(topic.strip(), course["id"], num_cards)
+                    result = generate_flashcards(topic.strip(), course["id"], num_cards, provider)
                 else:
-                    result = generate_practice_paper(course["id"], course["name"], exam_instructions)
+                    result = generate_practice_paper(course["id"], course["name"], exam_instructions, provider)
                 st.session_state["gen_result"] = result
                 st.session_state["gen_type"] = gen_type
                 st.session_state["gen_course_id"] = course["id"]

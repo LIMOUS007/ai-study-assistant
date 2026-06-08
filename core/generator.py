@@ -1,15 +1,10 @@
-import os
+import chromadb
 from pydantic import BaseModel
+from pathlib import Path
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
-from langchain_openai import ChatOpenAI
-# from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-# from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-# from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
-import chromadb, httpx
-from pathlib import Path
+from core.llm import get_model, UsageTracker
 
 
 # ─── MODELS ───────────────────────────────────────────────────────────────────
@@ -59,8 +54,6 @@ class PracticePaper(BaseModel):
 
 def retrieve_context(topic: str, course_id: str, k: int = 6) -> str:
     vectorstore_path = Path("vectorstore") / course_id
-    # embeddings = OpenAIEmbeddings(http_client=httpx.Client(verify=False))
-    # embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     client = chromadb.PersistentClient(path=str(vectorstore_path))
     vector_store = Chroma(client=client, embedding_function=embeddings)
@@ -94,21 +87,21 @@ _NOTE_SYSTEM_PROMPTS = {
         "You are writing REVISION NOTES. Use ONLY bullet points — zero prose paragraphs.\n"
         "Each section must be scannable in under 30 seconds.\n"
         "Format per concept:\n"
-        "• Definition: [one line]\n"
-        "• Key property: [one line]\n"
-        "• Complexity: [O(?) best/avg/worst]\n"
-        "• Example: [one 2-line trace, no full code]\n"
+        "- Definition: [one line]\n"
+        "- Key property: [one line]\n"
+        "- Complexity: [O(?) best/avg/worst]\n"
+        "- Example: [one 2-line trace, no full code]\n"
         "No callout labels, no full sentences, no theory. Bullet points only.\n"
         "Use only the course material below."
     ),
     "exam": (
         "You are writing EXAM CHEAT NOTES. Absolutely NO prose.\n"
         "Each section contains ONLY:\n"
-        "- Complexity table (Best | Avg | Worst | Space)\n"
+        "- Complexity line (format: Complexity: O(?) best / O(?) avg / O(?) worst / O(?) space)\n"
         "- 'Exam move:' bullets — techniques that score marks\n"
         "- 'Pitfall:' bullets — traps students fall into\n"
         "- 'Common mistake:' bullets — frequent errors\n"
-        "End with a fast-revision checklist (tick-box style).\n"
+        "End with a fast-revision checklist (use '[ ]' prefix for each item).\n"
         "If a section has no callouts, do not include it.\n"
         "Use only the course material below."
     ),
@@ -118,36 +111,29 @@ _NOTE_SYSTEM_PROMPTS = {
         "- Max 5 words per bullet point\n"
         "- Complexities and formulas ONLY\n"
         "- No examples, no explanations, no full sentences\n"
-        "- No callout labels\n"
         "Every section is a list of 3-6 ultra-short bullets. Nothing else.\n"
         "Use only the course material below."
     ),
 }
 
 
-def generate_notes(topic: str, note_type: str, course_id: str) -> NoteDocument:
+def generate_notes(topic: str, note_type: str, course_id: str, provider: str = "cerebras") -> NoteDocument:
     context = retrieve_context(topic, course_id)
     if not context:
         raise ValueError("No course material found for this topic.")
-
     system = _NOTE_SYSTEM_PROMPTS.get(note_type, _NOTE_SYSTEM_PROMPTS["detailed"])
     prompt = ChatPromptTemplate.from_messages([
         ("system", system + "\n\nTopic: {topic}\n\nCourse material:\n{context}"),
     ])
-
-    # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
-    # model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
-    # model = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("groq_api_key"), http_client=httpx.Client(verify=False))
-    model = ChatOpenAI(model="gpt-oss-120b", base_url="https://api.cerebras.ai/v1", api_key=os.getenv("CEREBRAS_API_KEY"), http_client=httpx.Client(verify=False))
-    chain = prompt | model.with_structured_output(NoteDocument)
-    return chain.invoke({"topic": topic, "context": context})
+    tracker = UsageTracker()
+    chain = prompt | get_model(provider).with_structured_output(NoteDocument)
+    return chain.invoke({"topic": topic, "context": context}, config={"callbacks": [tracker]})
 
 
-def generate_quiz(topic: str, quiz_type: str, course_id: str, num_questions: int = 5) -> QuizDocument:
+def generate_quiz(topic: str, course_id: str, num_questions: int = 5, provider: str = "cerebras") -> QuizDocument:
     context = retrieve_context(topic, course_id)
     if not context:
         raise ValueError("No course material found for this topic.")
-
     prompt = ChatPromptTemplate.from_messages([
         ("system",
          "You are a professor writing an exam-style MCQ quiz.\n\n"
@@ -163,24 +149,14 @@ def generate_quiz(topic: str, quiz_type: str, course_id: str, num_questions: int
          "- Cover different parts of the material, not the same concept repeatedly.\n\n"
          "Course material:\n{context}"),
     ])
-
-    # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
-    # model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
-    # model = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("groq_api_key"), http_client=httpx.Client(verify=False))
-    model = ChatOpenAI(model="gpt-oss-120b", base_url="https://api.cerebras.ai/v1", api_key=os.getenv("CEREBRAS_API_KEY"), http_client=httpx.Client(verify=False))
-    chain = prompt | model.with_structured_output(QuizDocument)
-    return chain.invoke({
-        "topic": topic,
-        "num_questions": num_questions,
-        "context": context,
-    })
+    chain = prompt | get_model(provider).with_structured_output(QuizDocument)
+    return chain.invoke({"topic": topic, "num_questions": num_questions, "context": context})
 
 
-def generate_flashcards(topic: str, course_id: str, num_cards: int = 10) -> FlashcardDeck:
+def generate_flashcards(topic: str, course_id: str, num_cards: int = 10, provider: str = "cerebras") -> FlashcardDeck:
     context = retrieve_context(topic, course_id)
     if not context:
         raise ValueError("No course material found for this topic.")
-
     prompt = ChatPromptTemplate.from_messages([
         ("system",
          "You are a professor creating a flashcard deck for exam revision.\n\n"
@@ -195,25 +171,15 @@ def generate_flashcards(topic: str, course_id: str, num_cards: int = 10) -> Flas
          "common pitfalls.\n\n"
          "Course material:\n{context}"),
     ])
-
-    # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
-    # model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
-    # model = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("groq_api_key"), http_client=httpx.Client(verify=False))
-    model = ChatOpenAI(model="gpt-oss-120b", base_url="https://api.cerebras.ai/v1", api_key=os.getenv("CEREBRAS_API_KEY"), http_client=httpx.Client(verify=False))
-    chain = prompt | model.with_structured_output(FlashcardDeck)
-    return chain.invoke({
-        "topic": topic,
-        "num_cards": num_cards,
-        "context": context,
-    })
+    chain = prompt | get_model(provider).with_structured_output(FlashcardDeck)
+    return chain.invoke({"topic": topic, "num_cards": num_cards, "context": context})
 
 
-def generate_practice_paper(course_id: str, course_name: str, instructions: str) -> PracticePaper:
+def generate_practice_paper(course_id: str, course_name: str, instructions: str, provider: str = "cerebras") -> PracticePaper:
     # k=12 for broad topic coverage across the full course, not just one concept
     context = retrieve_context("exam topics key concepts overview", course_id, k=12)
     if not context:
         raise ValueError("No course material found. Upload documents first.")
-
     prompt = ChatPromptTemplate.from_messages([
         ("system",
          "You are a professor setting a university exam paper for the course: {course_name}.\n\n"
@@ -228,20 +194,11 @@ def generate_practice_paper(course_id: str, course_name: str, instructions: str)
          "- Every question MUST have a complete model answer — not a hint, the full answer\n"
          "- Questions must be exam-quality and grounded in the course material below\n"
          "- Do not repeat concepts across questions\n\n"
-         "COURSE MATERIAL:\n{context}\n\n"
-         "{format_instructions}"),
+         "COURSE MATERIAL:\n{context}"),
     ])
-
-    parser = JsonOutputParser(pydantic_object=PracticePaper)
-    # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
-    # model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
-    # model = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("groq_api_key"), http_client=httpx.Client(verify=False))
-    model = ChatOpenAI(model="gpt-oss-120b", base_url="https://api.cerebras.ai/v1", api_key=os.getenv("CEREBRAS_API_KEY"), http_client=httpx.Client(verify=False))
-    model_json = model.bind(response_format={"type": "json_object"})
-    chain = prompt | model_json | parser
+    chain = prompt | get_model(provider).with_structured_output(PracticePaper)
     return chain.invoke({
         "course_name": course_name,
         "instructions": instructions or "Standard university exam paper. Cover all major topics.",
         "context": context,
-        "format_instructions": parser.get_format_instructions(),
     })

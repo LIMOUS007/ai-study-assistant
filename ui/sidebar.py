@@ -3,6 +3,7 @@ import streamlit as st
 from pathlib import Path
 from core import database as db
 from core.ingestion import delete_vectorstore
+from core.llm import PROVIDERS, is_configured, check_api_key
 from ui.upload_view import render_upload_popover
 
 
@@ -21,6 +22,64 @@ def render_sidebar():
         key="chat_mode",
         help="Academic: structured 9-section format. Quick Answer: plain prose.",
     )
+
+    # --- Model selector ---
+    # key_status lives in session_state and is the single source of truth for
+    # API key health. It is NEVER populated automatically — only when the user
+    # explicitly clicks "Test". Every re-render just reads from this cache.
+    if "provider" not in st.session_state:
+        st.session_state["provider"] = "cerebras"
+    if "key_status" not in st.session_state:
+        st.session_state["key_status"] = {}
+
+    _STATUS_ICON = {
+        "active":      "🟢",
+        "invalid_key": "🔴",
+        "no_credits":  "🟡",
+        "no_key":      "⚪",
+        "error":       "🔴",
+    }
+
+    def _provider_label(k: str) -> str:
+        cached = st.session_state["key_status"].get(k)
+        if cached:
+            icon = _STATUS_ICON.get(cached["status"], "⚪")
+        elif is_configured(k):
+            icon = "⚪"   # key present but never tested
+        else:
+            icon = "🔴"   # no key at all
+        return f"{icon} {PROVIDERS[k]['label']}"
+
+    st.selectbox(
+        "Model",
+        options=list(PROVIDERS.keys()),
+        format_func=_provider_label,
+        key="provider",
+        help="🟢 Active  🟡 No credits  🔴 Invalid/missing  ⚪ Untested",
+    )
+
+    # Status line + Test button — always reads from cache, never auto-checks
+    provider = st.session_state["provider"]
+    cached = st.session_state["key_status"].get(provider)
+
+    col_status, col_btn = st.columns([3, 1])
+    with col_status:
+        if cached:
+            icon = _STATUS_ICON.get(cached["status"], "⚪")
+            st.caption(f"{icon} {cached['message']} · {cached['checked_at']}")
+        elif is_configured(provider):
+            st.caption("⚪ Key found — not tested yet")
+        else:
+            st.caption("🔴 No key in .env")
+
+    with col_btn:
+        if st.button("Test", key="test_key_btn", use_container_width=True):
+            with st.spinner("Testing..."):
+                result = check_api_key(provider)
+            # Write to cache — this is the ONLY place key_status is ever written
+            st.session_state["key_status"][provider] = result
+            st.rerun()
+
     st.divider()
 
     # --- New Course ---

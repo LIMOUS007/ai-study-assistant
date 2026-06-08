@@ -38,6 +38,8 @@ def _val(s) -> str | None:
 
 def academic_response_to_markdown(response: AcademicResponse) -> str:
     parts = []
+    if _val(response.question_repeated):
+        parts.append(f"*{response.question_repeated}*")
     for field in (response.professor_explanation, response.beginner_explanation,
                   response.analogy, response.theory_and_concepts, response.worked_examples,
                   response.common_mistakes):
@@ -53,12 +55,8 @@ def academic_response_to_markdown(response: AcademicResponse) -> str:
     return "\n\n".join(parts)
 
 
-def get_academic_parser() -> PydanticOutputParser:
-    return PydanticOutputParser(pydantic_object=AcademicResponse)
-
-
 def build_academic_prompt(system_prompt: str) -> ChatPromptTemplate:
-    parser = get_academic_parser()
+    parser = PydanticOutputParser(pydantic_object=AcademicResponse)
     format_instructions = parser.get_format_instructions()
     system_message = (
         "{system_prompt}\n\n"

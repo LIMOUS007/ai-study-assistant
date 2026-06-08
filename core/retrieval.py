@@ -1,15 +1,9 @@
-import os
-import httpx
 import chromadb
 from pathlib import Path
-from langchain_openai import ChatOpenAI
-# from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-# from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-# from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables import RunnableParallel, RunnableLambda
+from langchain_core.runnables import RunnableLambda
 from langchain_core.output_parsers import StrOutputParser
 from core.teaching import build_academic_prompt, academic_response_to_markdown, AcademicResponse, is_academic_question
 
@@ -44,21 +38,18 @@ def _unique_sources(docs) -> list[str]:
     return sources
 
 
-def build_rag_chain(course_id: str, system_prompt: str):
+def _get_vectorstore(course_id: str) -> Chroma:
     vectorstore_path = Path("vectorstore") / course_id
-    # embeddings = OpenAIEmbeddings(http_client=httpx.Client(verify=False))
-    # embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     client = chromadb.PersistentClient(path=str(vectorstore_path))
-    vector_store = Chroma(client=client, embedding_function=embeddings)
+    return Chroma(client=client, embedding_function=embeddings)
 
-    rag_instruction = (
-        "\n\nAnswer using ONLY the course material provided below. "
-        "Do not use prior knowledge outside the provided context.\n\n"
-        "{context}"
-    )
+
+def build_rag_chain(course_id: str, system_prompt: str, model):
+    vector_store = _get_vectorstore(course_id)
     rag_prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt + rag_instruction),
+        ("system", system_prompt + "\n\nAnswer using ONLY the course material provided below. "
+         "Do not use prior knowledge outside the provided context.\n\n{context}"),
         MessagesPlaceholder("history"),
         ("human", "{question}"),
     ])
@@ -67,10 +58,6 @@ def build_rag_chain(course_id: str, system_prompt: str):
         MessagesPlaceholder("history"),
         ("human", "{question}"),
     ])
-    # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
-    # model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
-    # model = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("groq_api_key"), http_client=httpx.Client(verify=False))
-    model = ChatOpenAI(model="gpt-oss-120b", base_url="https://api.cerebras.ai/v1", api_key=os.getenv("CEREBRAS_API_KEY"), http_client=httpx.Client(verify=False))
 
     def run_chain(inputs: dict) -> str:
         docs = _filter_by_relevance(
@@ -93,19 +80,13 @@ def build_rag_chain(course_id: str, system_prompt: str):
             "question": inputs["question"],
         })
         source_lines = "\n".join(f"- {s}" for s in sources)
-        answer += f"\n\n---\n**Sources**\n{source_lines}"
-        return answer
+        return answer + f"\n\n---\n**Sources**\n{source_lines}"
 
     return RunnableLambda(run_chain)
 
 
-def build_academic_rag_chain(course_id: str, system_prompt: str):
-    vectorstore_path = Path("vectorstore") / course_id
-    # embeddings = OpenAIEmbeddings(http_client=httpx.Client(verify=False))
-    # embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    client = chromadb.PersistentClient(path=str(vectorstore_path))
-    vector_store = Chroma(client=client, embedding_function=embeddings)
+def build_academic_rag_chain(course_id: str, system_prompt: str, model):
+    vector_store = _get_vectorstore(course_id)
     academic_prompt = build_academic_prompt(system_prompt)
     plain_prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
@@ -117,10 +98,6 @@ def build_academic_rag_chain(course_id: str, system_prompt: str):
         MessagesPlaceholder("history"),
         ("human", "{question}"),
     ])
-    # model = ChatOpenAI(model="gpt-4.1-mini", http_client=httpx.Client(verify=False))
-    # model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
-    # model = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("groq_api_key"), http_client=httpx.Client(verify=False))
-    model = ChatOpenAI(model="gpt-oss-120b", base_url="https://api.cerebras.ai/v1", api_key=os.getenv("CEREBRAS_API_KEY"), http_client=httpx.Client(verify=False))
 
     def run_chain(inputs: dict) -> str:
         docs = _filter_by_relevance(
@@ -153,8 +130,7 @@ def build_academic_rag_chain(course_id: str, system_prompt: str):
                     "question": inputs["question"],
                 })
             )
-        answer += f"\n\n---\n**Sources**\n{source_lines}"
-        return answer
+        return answer + f"\n\n---\n**Sources**\n{source_lines}"
 
     return RunnableLambda(run_chain)
 
@@ -165,10 +141,7 @@ def semantic_search(query: str, course_id: str, category: str = None, k: int = 1
     if not vectorstore_path.exists():
         return []
 
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    client = chromadb.PersistentClient(path=str(vectorstore_path))
-    vector_store = Chroma(client=client, embedding_function=embeddings)
-
+    vector_store = _get_vectorstore(course_id)
     search_kwargs: dict = {"k": k}
     if category:
         search_kwargs["filter"] = {"category": {"$eq": category}}
@@ -178,13 +151,13 @@ def semantic_search(query: str, course_id: str, category: str = None, k: int = 1
     except Exception:
         results = []
 
-    out = []
-    for doc, score in results:
-        out.append({
+    return [
+        {
             "excerpt": doc.page_content,
             "source": doc.metadata.get("source", "unknown"),
             "category": doc.metadata.get("category", ""),
             "page": doc.metadata.get("page", ""),
             "score": round(score, 3),
-        })
-    return out
+        }
+        for doc, score in results
+    ]
