@@ -60,20 +60,19 @@ def build_rag_chain(course_id: str, system_prompt: str, model):
     ])
 
     def run_chain(inputs: dict) -> str:
-        docs = _filter_by_relevance(
+        relevant_docs = _filter_by_relevance(
             vector_store.similarity_search_with_relevance_scores(inputs["question"], k=4)
         )
-        if not docs:
-            docs = vector_store.similarity_search(inputs["question"], k=4)
 
-        if not docs:
+        if not relevant_docs:
+            # No relevant course material — answer without RAG context or sources
             return (plain_prompt | model | StrOutputParser()).invoke({
                 "history": inputs["history"],
                 "question": inputs["question"],
             })
 
-        context = _format_docs(docs)
-        sources = _unique_sources(docs)
+        context = _format_docs(relevant_docs)
+        sources = _unique_sources(relevant_docs)
         answer = (rag_prompt | model | StrOutputParser()).invoke({
             "context": context,
             "history": inputs["history"],
@@ -100,20 +99,19 @@ def build_academic_rag_chain(course_id: str, system_prompt: str, model):
     ])
 
     def run_chain(inputs: dict) -> str:
-        docs = _filter_by_relevance(
+        relevant_docs = _filter_by_relevance(
             vector_store.similarity_search_with_relevance_scores(inputs["question"], k=4)
         )
-        if not docs:
-            docs = vector_store.similarity_search(inputs["question"], k=4)
 
-        if not docs:
+        if not relevant_docs:
+            # No relevant course material — answer without RAG context or sources
             return (plain_prompt | model | StrOutputParser()).invoke({
                 "history": inputs["history"],
                 "question": inputs["question"],
             })
 
-        context = _format_docs(docs)
-        sources = _unique_sources(docs)
+        context = _format_docs(relevant_docs)
+        sources = _unique_sources(relevant_docs)
         source_lines = "\n".join(f"- {s}" for s in sources)
 
         if not is_academic_question(inputs["question"], model):

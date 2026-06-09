@@ -164,6 +164,10 @@ def add_message(course_id: str, role: str, content: str):
             "INSERT INTO chat_messages (id, course_id, role, content) VALUES (?, ?, ?, ?)",
             (str(uuid.uuid4()), course_id, role, content)
         )
+        conn.execute(
+            "UPDATE courses SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (course_id,)
+        )
         conn.commit()
 
 

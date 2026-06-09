@@ -58,8 +58,12 @@ def render_sidebar():
         help="🟢 Active  🟡 No credits  🔴 Invalid/missing  ⚪ Untested",
     )
 
-    # Status line + Test button — always reads from cache, never auto-checks
+    # Auto-test on first load if key is configured and not yet tested this session
     provider = st.session_state["provider"]
+    if is_configured(provider) and provider not in st.session_state["key_status"]:
+        with st.spinner("Testing key..."):
+            st.session_state["key_status"][provider] = check_api_key(provider)
+
     cached = st.session_state["key_status"].get(provider)
 
     col_status, col_btn = st.columns([3, 1])
