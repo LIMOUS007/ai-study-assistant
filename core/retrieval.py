@@ -31,7 +31,7 @@ def _unique_sources(docs) -> list[str]:
     for doc in docs:
         source = doc.metadata.get("source", "unknown")
         page = doc.metadata.get("page", "")
-        label = f"{source}, page {page}" if page not in ("", 0) else source
+        label = f"{source}, page {page}" if page != "" else source
         if label not in seen:
             seen.add(label)
             sources.append(label)
