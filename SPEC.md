@@ -45,7 +45,9 @@ individual calls before generation:
 ## 3. UI/UX
 
 ### ~~5a. No per-topic progress~~ DONE (`st.status()` with per-topic tick)
-### ~~5b. API key never auto-tested~~ DONE (tested on first sidebar load)
+### ~~5b. API key test~~ DONE (manual Test button only; removed auto-test — it ran on every render and caused model selector to reset to top option)
+### ~~5c. Model/token info lost after rerun~~ DONE (stored in session_state per course, replayed as caption on last AI message in history)
+### ~~5e. Scroll button broken~~ DONE (removed useless nav-row button; auto-scroll fires via session flag after each new message send)
 ### ~~5d. No topic history~~ DONE (last 5 topics as quick-select chips)
 
 ---

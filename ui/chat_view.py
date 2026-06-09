@@ -29,11 +29,15 @@ def _render_chat_tab(course: dict):
     if not messages:
         st.info("No messages yet. Ask anything about this course.")
 
-    for msg in messages:
+    last_usage = st.session_state.get(f"last_chat_usage_{course['id']}")
+    for i, msg in enumerate(messages):
         with st.chat_message("user" if msg["role"] == "human" else "assistant"):
             st.markdown(msg["content"])
+            if msg["role"] == "ai" and i == len(messages) - 1 and last_usage:
+                token_str = f"{last_usage['tokens']} tokens" if last_usage.get("tokens") else ""
+                st.caption(f"{last_usage['model']}" + (f" · {token_str}" if token_str else ""))
 
-    c1, c2, c3, _, c4 = st.columns([1, 1, 1, 4, 1])
+    c1, c2, c3, _ = st.columns([1, 1, 1, 5])
     if c1.button("💬 Chat", type="primary", use_container_width=True):
         pass
     if c2.button("📚 Generate", use_container_width=True):
@@ -42,16 +46,16 @@ def _render_chat_tab(course: dict):
     if c3.button("🔍 Search", use_container_width=True):
         st.session_state["view"] = "search"
         st.rerun()
-    if messages and c4.button("⬇", help="Scroll to latest message", use_container_width=True):
-        st.session_state["_scroll_down"] = True
 
-    if st.session_state.get("_scroll_down"):
-        st.session_state["_scroll_down"] = False
+    if st.session_state.get("_auto_scroll"):
+        del st.session_state["_auto_scroll"]
         import streamlit.components.v1 as components
         components.html(
             """<script>
-            const main = window.parent.document.querySelector('section[data-testid="stMain"]');
-            if (main) main.scrollTo({top: main.scrollHeight, behavior: 'smooth'});
+            setTimeout(function() {
+                const main = window.parent.document.querySelector('section[data-testid="stMain"]');
+                if (main) main.scrollTo({top: main.scrollHeight, behavior: 'smooth'});
+            }, 150);
             </script>""",
             height=0,
         )
@@ -80,6 +84,8 @@ def _render_chat_tab(course: dict):
             token_str = f"{usage['tokens']} tokens" if usage.get("tokens") else ""
             st.caption(f"{usage['model']}" + (f" · {token_str}" if token_str else ""))
 
+        st.session_state[f"last_chat_usage_{course['id']}"] = usage
+        st.session_state["_auto_scroll"] = True
         db.add_message(course["id"], "ai", response)
         st.rerun()
 
