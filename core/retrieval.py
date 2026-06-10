@@ -1,7 +1,7 @@
 import chromadb
 from pathlib import Path
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
+from core.embeddings import get_embeddings
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnableLambda
 from langchain_core.output_parsers import StrOutputParser
@@ -40,9 +40,8 @@ def _unique_sources(docs) -> list[str]:
 
 def _get_vectorstore(course_id: str) -> Chroma:
     vectorstore_path = Path("vectorstore") / course_id
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     client = chromadb.PersistentClient(path=str(vectorstore_path))
-    return Chroma(client=client, embedding_function=embeddings)
+    return Chroma(client=client, embedding_function=get_embeddings())
 
 
 def build_rag_chain(course_id: str, system_prompt: str, model):

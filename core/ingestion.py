@@ -5,7 +5,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 import httpx
 import chromadb
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 import requests
 from youtube_transcript_api import YouTubeTranscriptApi
 from langchain_core.documents import Document
@@ -100,6 +100,24 @@ def delete_document_chunks(course_id: str, document_id: str):
     result = vector_store._collection.get(where={"document_id": {"$eq": document_id}})
     if result["ids"]:
         vector_store.delete(result["ids"])
+
+
+def update_document_metadata(course_id: str, document_id: str, source: str = None, category: str = None):
+    """Update the 'source'/'category' metadata on every chunk belonging to a document."""
+    vectorstore_path = Path("vectorstore") / course_id
+    if not vectorstore_path.exists():
+        return
+    vector_store = _get_vectorstore(course_id)
+    result = vector_store._collection.get(where={"document_id": {"$eq": document_id}})
+    if not result["ids"]:
+        return
+    metadatas = result["metadatas"]
+    for meta in metadatas:
+        if source is not None:
+            meta["source"] = source
+        if category is not None:
+            meta["category"] = category
+    vector_store._collection.update(ids=result["ids"], metadatas=metadatas)
 
 
 def _video_id_from_url(url: str) -> str:

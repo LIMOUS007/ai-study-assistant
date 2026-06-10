@@ -15,6 +15,9 @@ PROVIDERS: dict[str, dict] = {
     "groq":     {"label": "Groq · llama-3.3-70b",    "env": "groq_api_key"},
 }
 
+# Order to try when the selected provider hits a rate limit / quota error.
+FALLBACK_ORDER: list[str] = ["cerebras", "groq", "openai", "google"]
+
 
 def get_model(provider: str):
     if provider == "openai":
@@ -109,6 +112,33 @@ def check_api_key(provider: str) -> dict:
         }
 
 
+def is_rate_limit_error(e: Exception) -> bool:
+    err = str(e).lower()
+    return any(t in err for t in ("429", "rate limit", "rate_limit", "quota", "tpd", "tpm"))
+
+
+def with_provider_fallback(provider: str, fn):
+    """Call fn(provider) and return (result, provider_used).
+
+    On a rate-limit/quota error, retries with the next configured provider
+    from FALLBACK_ORDER. Re-raises the original error if every configured
+    provider has been exhausted.
+    """
+    candidates = [provider] + [p for p in FALLBACK_ORDER if p != provider]
+    last_err = None
+    for p in candidates:
+        if not is_configured(p):
+            continue
+        try:
+            return fn(p), p
+        except Exception as e:
+            if is_rate_limit_error(e):
+                last_err = e
+                continue
+            raise
+    raise last_err or RuntimeError("No configured LLM providers available")
+
+
 class UsageTracker(BaseCallbackHandler):
     """Captures total token usage across every LLM call in a chain invocation."""
 
@@ -116,8 +146,21 @@ class UsageTracker(BaseCallbackHandler):
         self.total_tokens = 0
 
     def on_llm_end(self, response, **kwargs):
+        # Most chat models attach usage_metadata to the returned AIMessage.
+        found = False
         for gen_list in response.generations:
             for gen in gen_list:
-                if hasattr(gen, "message") and hasattr(gen.message, "usage_metadata"):
-                    meta = gen.message.usage_metadata or {}
+                meta = getattr(getattr(gen, "message", None), "usage_metadata", None)
+                if meta:
                     self.total_tokens += meta.get("total_tokens", 0)
+                    found = True
+        if found:
+            return
+
+        # Fallback: some providers report usage on llm_output instead of
+        # per-generation usage_metadata.
+        llm_output = getattr(response, "llm_output", None)
+        if isinstance(llm_output, dict):
+            token_usage = llm_output.get("token_usage") or llm_output.get("usage_metadata")
+            if isinstance(token_usage, dict):
+                self.total_tokens += token_usage.get("total_tokens", 0)

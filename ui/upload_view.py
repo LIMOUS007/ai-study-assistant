@@ -1,7 +1,7 @@
 import streamlit as st
 from pathlib import Path
 from core import database as db
-from core.ingestion import ingest_file, ingest_youtube, delete_document_chunks, delete_vectorstore
+from core.ingestion import ingest_file, ingest_youtube, delete_document_chunks, delete_vectorstore, update_document_metadata
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 
 _ERROR_KEY = "upload_error"
@@ -161,14 +161,39 @@ def render_upload_popover(course: dict):
             total_chunks = sum(d["chunk_count"] for d in docs)
             st.caption(f"{len(docs)} source{'s' if len(docs) > 1 else ''} · {total_chunks} chunks indexed")
             for doc in docs:
-                col1, col2 = st.columns([5, 1])
-                icon = "▶️" if doc["document_category"] == "youtube" else "📄"
-                label = f"{icon} {doc['filename']} · {doc['document_category']} · {doc['chunk_count']} chunks"
-                col1.caption(label)
-                if col2.button("✕", key=f"del_{doc['id']}"):
-                    delete_document_chunks(course_id, doc["id"])
-                    db.delete_document(doc["id"])
-                    st.rerun()
+                edit_key = f"edit_doc_{doc['id']}"
+                if st.session_state.get(edit_key):
+                    new_name = st.text_input(
+                        "Name", value=doc["filename"], key=f"name_{doc['id']}",
+                    )
+                    cat_options = ["notes", "slides", "book", "assignment", "youtube"]
+                    cur_idx = cat_options.index(doc["document_category"]) if doc["document_category"] in cat_options else 0
+                    new_category = st.selectbox(
+                        "Category", cat_options, index=cur_idx, key=f"cat_{doc['id']}",
+                    )
+                    c1, c2 = st.columns(2)
+                    if c1.button("Save", key=f"save_{doc['id']}", use_container_width=True):
+                        new_name = new_name.strip()
+                        if new_name:
+                            db.update_document(doc["id"], filename=new_name, document_category=new_category)
+                            update_document_metadata(course_id, doc["id"], source=new_name, category=new_category)
+                        st.session_state.pop(edit_key, None)
+                        st.rerun()
+                    if c2.button("Cancel", key=f"cancel_{doc['id']}", use_container_width=True):
+                        st.session_state.pop(edit_key, None)
+                        st.rerun()
+                else:
+                    col1, col2, col3 = st.columns([5, 1, 1])
+                    icon = "▶️" if doc["document_category"] == "youtube" else "📄"
+                    label = f"{icon} {doc['filename']} · {doc['document_category']} · {doc['chunk_count']} chunks"
+                    col1.caption(label)
+                    if col2.button("✏️", key=f"editbtn_{doc['id']}"):
+                        st.session_state[edit_key] = True
+                        st.rerun()
+                    if col3.button("✕", key=f"del_{doc['id']}"):
+                        delete_document_chunks(course_id, doc["id"])
+                        db.delete_document(doc["id"])
+                        st.rerun()
 
             st.divider()
             if st.button("🗑️ Clear knowledge base", use_container_width=True):

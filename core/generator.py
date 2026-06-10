@@ -4,9 +4,9 @@ from typing import Optional
 from pydantic import BaseModel
 from pathlib import Path
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from core.llm import get_model, UsageTracker
+from core.embeddings import get_embeddings
 
 
 # ─── MODELS ───────────────────────────────────────────────────────────────────
@@ -127,9 +127,8 @@ class LatexNotesDocument(BaseModel):
 
 def retrieve_context(topic: str, course_id: str, k: int = 6) -> str:
     vectorstore_path = Path("vectorstore") / course_id
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     client = chromadb.PersistentClient(path=str(vectorstore_path))
-    vector_store = Chroma(client=client, embedding_function=embeddings)
+    vector_store = Chroma(client=client, embedding_function=get_embeddings())
     docs = vector_store.similarity_search(topic, k=k)
     if not docs:
         return ""
@@ -235,6 +234,7 @@ def generate_notes(topic: str, note_type: str, course_id: str, provider: str = "
     system = _NOTE_SYSTEM_PROMPTS.get(note_type, _NOTE_SYSTEM_PROMPTS["detailed"])
     prompt = ChatPromptTemplate.from_messages([
         ("system", system + "\n\nTopic: {topic}\n\nCourse material:\n{context}"),
+        ("human", "Generate the notes now."),
     ])
     tracker = UsageTracker()
     chain = prompt | get_model(provider).with_structured_output(NoteDocument)
@@ -273,6 +273,7 @@ def generate_quiz(topic: str, course_id: str, num_questions: int = 5, provider: 
          "- Never include an option that is clearly impossible\n"
          "- Never repeat the same complexity tested twice\n\n"
          "Course material:\n{context}"),
+        ("human", "Generate the quiz now."),
     ])
     chain = prompt | get_model(provider).with_structured_output(QuizDocument)
     return chain.invoke({"topic": topic, "num_questions": num_questions, "context": context})
@@ -309,6 +310,7 @@ def generate_flashcards(topic: str, course_id: str, num_cards: int = 10, provide
          "- Never a front that gives away the answer ('What is the LIFO data structure?' → Stack)\n"
          "- Never vague backs like 'it depends' or 'varies'\n\n"
          "Course material:\n{context}"),
+        ("human", "Generate the flashcards now."),
     ])
     chain = prompt | get_model(provider).with_structured_output(FlashcardDeck)
     return chain.invoke({"topic": topic, "num_cards": num_cards, "context": context})
@@ -352,6 +354,7 @@ def generate_practice_paper(course_id: str, course_name: str, instructions: str,
          "- Never include obviously wrong MCQ options\n"
          "- Never skip edge cases in Section C model answers\n\n"
          "COURSE MATERIAL:\n{context}"),
+        ("human", "Generate the exam paper now."),
     ])
     chain = prompt | get_model(provider).with_structured_output(PracticePaper)
     return chain.invoke({
@@ -575,6 +578,7 @@ def _generate_latex_notes_single(
          "- Plain text in body/bullets/exam_moves/pitfalls — no markdown bold or backticks\n"
          "- Use ONLY the course material below\n\n"
          "Topic: {topic}\n\nCourse material:\n{context}"),
+        ("human", "Generate the notes now."),
     ])
     tracker = UsageTracker()
     chain = prompt | get_model(provider).with_structured_output(LatexNotesDocument)

@@ -2,7 +2,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
 from core import database as db
-from core.llm import get_model, UsageTracker, PROVIDERS
+from core.llm import get_model, UsageTracker, PROVIDERS, with_provider_fallback
 from core.retrieval import build_rag_chain, build_academic_rag_chain
 from core.teaching import build_academic_prompt, academic_response_to_markdown, AcademicResponse, is_academic_question
 
@@ -16,7 +16,31 @@ def get_response(
     mode: str = "academic",
     provider: str = "cerebras",
 ) -> tuple[str, dict]:
-    """Returns (response_text, usage) where usage = {"model": label, "tokens": int}."""
+    """Returns (response_text, usage) where usage = {"model": label, "tokens": int}.
+
+    If the selected provider hits a rate limit / quota error, automatically
+    retries with the next configured provider (see core.llm.FALLBACK_ORDER).
+    """
+    (text, tracker), used_provider = with_provider_fallback(
+        provider,
+        lambda p: _generate(p, mode, user_message, course_name, course_prompt, chat_history, course_id),
+    )
+    usage = {
+        "model": PROVIDERS[used_provider]["label"],
+        "tokens": tracker.total_tokens or None,
+    }
+    return text, usage
+
+
+def _generate(
+    provider: str,
+    mode: str,
+    user_message: str,
+    course_name: str,
+    course_prompt: str,
+    chat_history: list,
+    course_id: str,
+) -> tuple[str, UsageTracker]:
     lc_history = [
         HumanMessage(content=m["content"]) if m["role"] == "human" else AIMessage(content=m["content"])
         for m in chat_history
@@ -76,8 +100,4 @@ def get_response(
                 )
                 text = academic_response_to_markdown(result)
 
-    usage = {
-        "model": PROVIDERS[provider]["label"],
-        "tokens": tracker.total_tokens or None,
-    }
-    return text, usage
+    return text, tracker

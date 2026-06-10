@@ -26,14 +26,21 @@ def init_db():
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS chat_messages (
-                id        TEXT PRIMARY KEY,
-                course_id TEXT NOT NULL,
-                role      TEXT NOT NULL,
-                content   TEXT NOT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                id         TEXT PRIMARY KEY,
+                course_id  TEXT NOT NULL,
+                role       TEXT NOT NULL,
+                content    TEXT NOT NULL,
+                model_label TEXT,
+                tokens     INTEGER,
+                timestamp  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
             )
         """)
+        existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(chat_messages)")}
+        if "model_label" not in existing_cols:
+            conn.execute("ALTER TABLE chat_messages ADD COLUMN model_label TEXT")
+        if "tokens" not in existing_cols:
+            conn.execute("ALTER TABLE chat_messages ADD COLUMN tokens INTEGER")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS documents (
                 id                TEXT PRIMARY KEY,
@@ -133,6 +140,15 @@ def get_documents(course_id: str) -> list:
     return [dict(row) for row in rows]
 
 
+def update_document(document_id: str, filename: str = None, document_category: str = None):
+    with get_connection() as conn:
+        if filename is not None:
+            conn.execute("UPDATE documents SET filename = ? WHERE id = ?", (filename, document_id))
+        if document_category is not None:
+            conn.execute("UPDATE documents SET document_category = ? WHERE id = ?", (document_category, document_id))
+        conn.commit()
+
+
 def update_chunk_count(document_id: str, count: int):
     with get_connection() as conn:
         conn.execute(
@@ -158,11 +174,11 @@ def course_has_documents(course_id: str) -> bool:
 
 # --- Chat Messages ---
 
-def add_message(course_id: str, role: str, content: str):
+def add_message(course_id: str, role: str, content: str, model_label: str = None, tokens: int = None):
     with get_connection() as conn:
         conn.execute(
-            "INSERT INTO chat_messages (id, course_id, role, content) VALUES (?, ?, ?, ?)",
-            (str(uuid.uuid4()), course_id, role, content)
+            "INSERT INTO chat_messages (id, course_id, role, content, model_label, tokens) VALUES (?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), course_id, role, content, model_label, tokens)
         )
         conn.execute(
             "UPDATE courses SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",

@@ -29,13 +29,12 @@ def _render_chat_tab(course: dict):
     if not messages:
         st.info("No messages yet. Ask anything about this course.")
 
-    last_usage = st.session_state.get(f"last_chat_usage_{course['id']}")
-    for i, msg in enumerate(messages):
+    for msg in messages:
         with st.chat_message("user" if msg["role"] == "human" else "assistant"):
             st.markdown(msg["content"])
-            if msg["role"] == "ai" and i == len(messages) - 1 and last_usage:
-                token_str = f"{last_usage['tokens']} tokens" if last_usage.get("tokens") else ""
-                st.caption(f"{last_usage['model']}" + (f" · {token_str}" if token_str else ""))
+            if msg["role"] == "ai" and msg.get("model_label"):
+                token_str = f"{msg['tokens']} tokens" if msg.get("tokens") else ""
+                st.caption(msg["model_label"] + (f" · {token_str}" if token_str else ""))
 
     c1, c2, c3, _ = st.columns([1, 1, 1, 5])
     if c1.button("💬 Chat", type="primary", use_container_width=True):
@@ -49,15 +48,14 @@ def _render_chat_tab(course: dict):
 
     if st.session_state.get("_auto_scroll"):
         del st.session_state["_auto_scroll"]
-        import streamlit.components.v1 as components
-        components.html(
+        st.iframe(
             """<script>
             setTimeout(function() {
                 const main = window.parent.document.querySelector('section[data-testid="stMain"]');
                 if (main) main.scrollTo({top: main.scrollHeight, behavior: 'smooth'});
             }, 150);
             </script>""",
-            height=0,
+            height=1,
         )
 
     user_input = st.chat_input(f"Ask anything about {course['name']}...")
@@ -71,22 +69,32 @@ def _render_chat_tab(course: dict):
 
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                response, usage = get_response(
-                    user_message=user_input,
-                    course_name=course["name"],
-                    course_prompt=course.get("course_prompt") or "",
-                    chat_history=history,
-                    course_id=course["id"],
-                    mode=st.session_state["chat_mode"],
-                    provider=st.session_state.get("provider", "cerebras"),
-                )
+                try:
+                    response, usage = get_response(
+                        user_message=user_input,
+                        course_name=course["name"],
+                        course_prompt=course.get("course_prompt") or "",
+                        chat_history=history,
+                        course_id=course["id"],
+                        mode=st.session_state["chat_mode"],
+                        provider=st.session_state.get("provider", "cerebras"),
+                    )
+                except Exception as e:
+                    err = str(e).lower()
+                    if any(t in err for t in ("429", "rate limit", "rate_limit", "quota", "tpd", "tpm")):
+                        st.error(
+                            "⚠️ This provider's rate limit or daily quota was reached. "
+                            "Switch the model provider in the sidebar, or wait and try again."
+                        )
+                    else:
+                        st.error(f"⚠️ Something went wrong: {e}")
+                    st.stop()
             st.markdown(response)
             token_str = f"{usage['tokens']} tokens" if usage.get("tokens") else ""
             st.caption(f"{usage['model']}" + (f" · {token_str}" if token_str else ""))
 
-        st.session_state[f"last_chat_usage_{course['id']}"] = usage
         st.session_state["_auto_scroll"] = True
-        db.add_message(course["id"], "ai", response)
+        db.add_message(course["id"], "ai", response, model_label=usage["model"], tokens=usage.get("tokens"))
         st.rerun()
 
 
@@ -407,9 +415,8 @@ def _render_latex_notes(doc):
 
     if pdf_bytes:
         import base64
-        import streamlit.components.v1 as _pdf_comps
         _b64 = base64.b64encode(pdf_bytes).decode()
-        _pdf_comps.html(
+        st.iframe(
             f'<iframe src="data:application/pdf;base64,{_b64}" '
             f'width="100%" height="700px" style="border:none;"></iframe>',
             height=720,
@@ -426,10 +433,9 @@ def _render_latex_notes(doc):
 
     if tex_src:
         import html as _html
-        import streamlit.components.v1 as _components
         escaped_tex = _html.escape(tex_src, quote=True)
         escaped_name = _html.escape(f"{doc.topic} - Exam Notes.tex", quote=True)
-        _components.html(
+        st.iframe(
             f"""
             <form action="https://www.overleaf.com/docs" method="post" target="_blank" style="display:inline-block;margin-right:8px">
               <input type="hidden" name="snip" value="{escaped_tex}">
