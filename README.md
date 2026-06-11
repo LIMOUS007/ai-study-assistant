@@ -75,11 +75,25 @@ Switch providers from the sidebar. Status is auto-tested on first load.
 
 ## Setup
 
-### 1. Clone and create a virtual environment
+### 1. Get the code and create a virtual environment
+
+**With Git:**
 
 ```bash
 git clone <repo-url>
 cd ai_study_assistant
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # macOS/Linux
+```
+
+**Without Git:**
+
+1. Download the project as a ZIP from the repository page (Code → Download ZIP).
+2. Extract the ZIP and open a terminal in the extracted `ai_study_assistant` folder.
+3. Create and activate a virtual environment:
+
+```bash
 python -m venv venv
 venv\Scripts\activate        # Windows
 # source venv/bin/activate   # macOS/Linux
